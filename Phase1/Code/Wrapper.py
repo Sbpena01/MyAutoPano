@@ -28,9 +28,7 @@ def ANMS(corner_score_img, num_best_corners):
     # Gets the regional maximums and their coordinates 
     binary_matrix = corner_score_img>0.01*corner_score_img.max()
     local_maxima = np.argwhere(binary_matrix)
-    n_strong = len(local_maxima)
-    r = np.ones(n_strong) * np.inf
-    idx = 0
+    r = {}
     for i in local_maxima:
         pixel_coord = tuple(i)
         r[pixel_coord] = np.inf
@@ -121,7 +119,7 @@ def main():
 	Perform ANMS: Adaptive Non-Maximal Suppression
 	Save ANMS output as anms.png
 	"""
-    ANMS_scores = ANMS(dst, 10)
+    ANMS_scores = ANMS(corner_responses[0], 10)
     
     """
 	Feature Descriptors
