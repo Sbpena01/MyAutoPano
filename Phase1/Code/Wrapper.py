@@ -21,7 +21,24 @@ import argparse
 
 # Add any python libraries here
 
-
+def ANMS(corner_score_img, num_best_corners):
+    # Gets the regional maximums and their coordinates 
+    binary_matrix = corner_score_img>0.01*corner_score_img.max()
+    local_maxima = np.argwhere(binary_matrix)
+    n_strong = len(local_maxima)
+    r = np.ones(n_strong) * np.inf
+    idx = 0
+    for i in local_maxima:
+        for j in local_maxima:
+            ED = np.inf
+            if corner_score_img[j[0], j[1]] > corner_score_img[i[0], i[1]]:
+                ED = (j[0] - i[1])**2 + (j[1]-i[1])**2
+            if ED < r[idx]:
+                r[idx] = ED
+        idx += 1
+    r.sort()
+    return np.flip(r)
+    
 # relative path to dataset
 def load_images(im_path: str, flags: int=cv2.IMREAD_GRAYSCALE) -> tuple[list[cv2.Mat], list[str]]:
     images = []
@@ -78,6 +95,12 @@ def main():
 	Corner Detection
 	Save Corner detection output as corners.png
 	"""
+    # gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    # dst = cv2.cornerHarris(gray,2,3,0.04)
+    # # dst = cv2.dilate(dst,None)
+    # img[dst>0.01*dst.max()]=[0,0,255]  # Does the same as imregionalmax?
+    # print(0.01*dst.max())
+    # cv2.imwrite('corners.png',img)
     corner_responses = []
     for i in range(0, len(images_gray)):
         corner_responses.append(cv2.cornerHarris(src=images_gray[i], blockSize=2, ksize=3, k=0.04))
@@ -89,7 +112,8 @@ def main():
 	Perform ANMS: Adaptive Non-Maximal Suppression
 	Save ANMS output as anms.png
 	"""
-
+    ANMS_scores = ANMS(corner_responses[0], 10)
+    
     """
 	Feature Descriptors
 	Save Feature Descriptor output as FD.png
