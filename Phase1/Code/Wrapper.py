@@ -18,6 +18,9 @@ import numpy as np
 import cv2
 import os
 import argparse
+import scipy
+import scipy.ndimage
+import diplib
 
 # Add any python libraries here
 
@@ -29,15 +32,21 @@ def ANMS(corner_score_img, num_best_corners):
     r = np.ones(n_strong) * np.inf
     idx = 0
     for i in local_maxima:
+        pixel_coord = tuple(i)
+        r[pixel_coord] = np.inf
+        ED = np.inf
         for j in local_maxima:
-            ED = np.inf
             if corner_score_img[j[0], j[1]] > corner_score_img[i[0], i[1]]:
                 ED = (j[0] - i[1])**2 + (j[1]-i[1])**2
-            if ED < r[idx]:
-                r[idx] = ED
-        idx += 1
-    r.sort()
-    return np.flip(r)
+            if ED < r[pixel_coord]:
+                r[pixel_coord] = ED
+    list = sorted(r.items(), key=lambda item: item[1])
+    list.reverse()
+    inf_removed = [x for x in list if x[1] != np.inf]
+    n_best = []
+    for i in range(num_best_corners):
+        n_best.append(inf_removed[i][0])
+    return n_best
     
 # relative path to dataset
 def load_images(im_path: str, flags: int=cv2.IMREAD_GRAYSCALE) -> tuple[list[cv2.Mat], list[str]]:
@@ -112,7 +121,7 @@ def main():
 	Perform ANMS: Adaptive Non-Maximal Suppression
 	Save ANMS output as anms.png
 	"""
-    ANMS_scores = ANMS(corner_responses[0], 10)
+    ANMS_scores = ANMS(dst, 10)
     
     """
 	Feature Descriptors
