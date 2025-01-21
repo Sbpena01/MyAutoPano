@@ -30,6 +30,8 @@ CORNER_HARRIS_K = 0.04
 DEBUG_LEVEL = 0
 
 # returns a mask with same size as image
+
+
 def region_maxima(image: np.ndarray, kernel_size: int) -> np.ndarray:
     if kernel_size % 2 == 0:
         raise ValueError(
@@ -46,7 +48,7 @@ def region_maxima(image: np.ndarray, kernel_size: int) -> np.ndarray:
 
 
 # could use a helper to decrease size of func. specifically the inner nested for loops.
-def ANMS(corner_responses, num_best_corners) -> list[list[tuple[int,int]]]:
+def ANMS(corner_responses, num_best_corners) -> list[list[tuple[int, int]]]:
     # Gets the regional maximums and their coordinates
     n_best_list = []
     for response in corner_responses:
@@ -73,6 +75,8 @@ def ANMS(corner_responses, num_best_corners) -> list[list[tuple[int,int]]]:
     return n_best_list
 
 # relative path to dataset
+
+
 def load_images(im_path: str, flags: int = cv2.IMREAD_GRAYSCALE) -> tuple[list[cv2.Mat], list[str]]:
     images = []
     image_names = []
@@ -83,14 +87,16 @@ def load_images(im_path: str, flags: int = cv2.IMREAD_GRAYSCALE) -> tuple[list[c
         images.append(image)
     return images, image_names
 
-def write_images(images: Union[list[np.ndarray], np.ndarray] , image_names: Union[list[str], str]):
+
+def write_images(images: Union[list[np.ndarray], np.ndarray], image_names: Union[list[str], str]):
     if type(images) == list and type(image_names) == list:
         for image, name in zip(images, image_names):
             cv2.imwrite(name, image)
     elif type(images) == np.ndarray and type(image_names) == str:
         cv2.imwrite(name, image)
     else:
-        raise(TypeError(f"Unsupported types recieved. Either list[np.ndarray], list[str] or np.ndarray, str. \n Given {type(images)}, {type(image_names)}"))
+        raise (TypeError(f"Unsupported types recieved. Either list[np.ndarray], list[str] or np.ndarray, str. \n Given {type(images)}, {type(image_names)}"))
+
 
 def write_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path):
     im_list = []
@@ -100,7 +106,9 @@ def write_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path):
             im_copy[coords[0], coords[1]] = [0, 0, 255]
         im_list.append(im_copy)
 
-    write_images(im_list, [anms_out_path + "anms" + name for name in image_names])
+    write_images(im_list, [anms_out_path + "anms" +
+                 name for name in image_names])
+
 
 def corner_viewer(corner_responses: Union[list[cv2.Mat], cv2.Mat], images_RGB: Union[list[np.ndarray], np.ndarray]) -> Union[list[np.ndarray], np.ndarray]:
     if type(corner_responses) == list and type(images_RGB) == list:
@@ -113,8 +121,9 @@ def corner_viewer(corner_responses: Union[list[cv2.Mat], cv2.Mat], images_RGB: U
         corner_images = copy.deepcopy(images_RGB)
         corner_images[corner_responses > 0] = [0, 0, 255]
     else:
-        raise(TypeError(f"Unsupported types recieved. Either list[cv2.Mat], list[np.ndarray] or cv2.Mat, np.ndarray. \n Given {type(corner_responses)}, {type(images_RGB)}"))
+        raise (TypeError(f"Unsupported types recieved. Either list[cv2.Mat], list[np.ndarray] or cv2.Mat, np.ndarray. \n Given {type(corner_responses)}, {type(images_RGB)}"))
     return corner_images
+
 
 def generate_corner_responses(images_gray: list[np.ndarray], image_names: list[str]) -> tuple[list[np.ndarray], list[int]]:
     corner_responses = []
@@ -125,16 +134,97 @@ def generate_corner_responses(images_gray: list[np.ndarray], image_names: list[s
         threshold = CORNER_SCORE_THRESHOLD * response.max()
         corner_image_mask = response > threshold
         count = np.sum(corner_image_mask)
-        print(f"[{name}]: Found {count} corners ({round(100*count/(img.shape[0]*img.shape[1]), 3)}%)")
+        print(f"[{name}]: Found {count} corners ({
+              round(100*count/(img.shape[0]*img.shape[1]), 3)}%)")
         if DEBUG_LEVEL > 0:
             plt.hist(response.flatten(), bins=1000)
-            plt.axvline(x=threshold, color='red', linestyle='--', linewidth=2, label=f'x = {threshold}')
-            plt.ylim([0,500])
+            plt.axvline(x=threshold, color='red', linestyle='--',
+                        linewidth=2, label=f'x = {threshold}')
+            plt.ylim([0, 500])
             plt.show()
         response = np.multiply(np.uint8(corner_image_mask), response)
         corner_responses.append(response)
         corner_counts.append(count)
     return corner_responses, corner_counts
+
+def get_subset(matrix: np.ndarray, subset_size:tuple):
+    column_coordinates_float = np.linspace(0, matrix.shape[0], subset_size[0])
+    column_coordinates_int = np.int8(column_coordinates_float)
+    row_coordinates_float = np.linspace(0, matrix.shape[1], subset_size[1])
+    row_coordinates_int = np.int8(row_coordinates_float)
+    output = np.zeros(subset_size)
+    for i in range(output.shape[0]):
+        for j in range(output.shape[1]):
+            output[i, j] = matrix[row_coordinates_int[i]-1, column_coordinates_int[j]-1]
+    return output
+
+def feature_descriptor(best_corners: list, original_image: np.ndarray):
+    padded_image = cv2.copyMakeBorder(original_image, 20, 20, 20, 20, cv2.BORDER_REFLECT)
+    feature_dict = dict()
+    for corner in best_corners:
+        # must shift all coords over by 20 as we are expanding the image
+        min_x = corner[0]
+        max_x = corner[0] + 41
+        min_y = corner[1]
+        max_y = corner[1] + 41
+        sub_region = padded_image[min_x:max_x, min_y:max_y]
+        blurred_region = cv2.GaussianBlur(sub_region, ksize=(5,5), sigmaX=1, sigmaY=1)
+        sub_samble = get_subset(blurred_region, (8, 8))
+        # cv2.imshow('image', sub)
+        # sub_sample = cv2.pyrDown(blurred_region, dstsize=(8,8)) # could be worth exploring in future
+        
+        sub_sample_reshaped = np.reshape(sub_samble, -1)
+        mean = np.mean(sub_sample_reshaped)
+        std = np.std(sub_sample_reshaped)
+        feature_dict[(corner[0], corner[1])] = (sub_sample_reshaped - mean) / std
+    return feature_dict
+
+def feature_matcher(feature_dict_1: dict, feature_dict_2: dict, ratio_threshold=0.8):
+    output_dictionary = dict()
+    for image_1_point in feature_dict_1.keys():
+        lowest_distance = np.inf
+        second_lowest_distance = lowest_distance
+        image_1_point_score = feature_dict_1[image_1_point]
+        for image_2_point in feature_dict_2.keys():
+            image_2_point_score = feature_dict_2[image_2_point]
+            squared_distance = np.sum((image_2_point_score - image_1_point_score) ** 2)
+            if squared_distance < lowest_distance:
+                second_lowest_distance = lowest_distance
+                lowest_distance = squared_distance
+                best_match = image_2_point
+        distance_ratio = lowest_distance/second_lowest_distance
+        if distance_ratio < 0.7:
+            output_dictionary[image_1_point] = best_match
+    return output_dictionary
+    
+def visualize_matches(image_pair, match_dict: dict):
+    # translate match pair into two  
+    points1_list = list(match_dict.keys())
+    keypoints1 = []
+
+    for i in range(0,len(points1_list)):
+        point = cv2.KeyPoint(float(points1_list[i][0]), float(points1_list[i][1]), 1.0)
+        keypoints1.append(point)
+
+    keypoints2 = []
+    match_pairs = []
+    for i in range(0, len(keypoints1)):
+        point2 = match_dict[points1_list[i]]
+        point2 = cv2.KeyPoint(float(point2[0]), float(point2[1]), 1.0)
+
+        keypoints2.append(point2)
+        
+        match_pairs.append(cv2.DMatch(_queryIdx=i, _trainIdx=i, _distance=0))
+        
+    
+    outimage = cv2.drawMatches(image_pair[0], keypoints1, image_pair[1], keypoints2, match_pairs, None) # outImg=cv2.DRAW_MATCHES_FLAGS_DEFAULT, matchesThickness=1
+    cv2.imshow('outimage', outimage)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# def draw_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict):
+#     concat_image = cv2.h
+#     return
 
 def main():
     # Add any Command Line arguments here
@@ -145,7 +235,8 @@ def main():
                         help='Relative path to set of images you want to stitch together. Default:Phase1/Data/Train/Set1/')
     Parser.add_argument('--OutputPath', default='Phase1/Outputs/',
                         help='Output directory for all Phase 1 images. Default:Phase1/Outputs/')
-    Parser.add_argument('--DebugLevel', type=int, default=0, help='increase debug verbosity with higher debug level')
+    Parser.add_argument('--DebugLevel', type=int, default=0,
+                        help='increase debug verbosity with higher debug level')
     Args = Parser.parse_args()
     ImagePath = Args.ImagePath
     OutputPath = Args.OutputPath
@@ -166,35 +257,51 @@ def main():
         Corner Detection
         Save Corner detection output as corners.png
         """
-    corner_responses, corner_count = generate_corner_responses(images_gray, image_names)
+    corner_responses, corner_count = generate_corner_responses(
+        images_gray, image_names)
 
     corner_images = corner_viewer(corner_responses, images_RGB)
     corner_out_path = OutputPath+"Corners/"
     if not os.path.isdir(corner_out_path):
         os.mkdir(corner_out_path)
 
-    write_images(corner_images, [corner_out_path + "corners" + name for name in image_names])
+    write_images(corner_images, [corner_out_path +
+                 "corners" + name for name in image_names])
 
     """
         Perform ANMS: Adaptive Non-Maximal Suppression
         Save ANMS output as anms.png
         """
-    ANMS_scores = ANMS(corner_responses, 500)
+    ANMS_output = ANMS(corner_responses, 500)
     anms_out_path = OutputPath+"anms/"
     if not os.path.isdir(anms_out_path):
         os.mkdir(anms_out_path)
 
-    write_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path)
+    write_anms_images(ANMS_output, images_RGB, image_names, anms_out_path)
 
     """
         Feature Descriptors
         Save Feature Descriptor output as FD.png
-        """
+    """
+    feature_dict0 = feature_descriptor(ANMS_output[0], images_gray[0])
+    feature_dict1 = feature_descriptor(ANMS_output[1], images_gray[1])
+    
+    # cv2.imshow("Original", images_RGB[0])
+    # cv2.imshow("Padded", cv2.copyMakeBorder(images_RGB[0], 20, 20, 20, 20, cv2.BORDER_REFLECT))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    # TODO save FD.png (stack feature vectors into one image)
 
     """
         Feature Matching
         Save Feature Matching output as matching.png
         """
+    
+    match_dict = feature_matcher(feature_dict0, feature_dict1)
+
+    visualize_matches((images_RGB[0], images_RGB[1]), match_dict)
+
 
     """
         Refine: RANSAC, Estimate Homography
