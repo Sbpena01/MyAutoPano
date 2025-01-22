@@ -108,19 +108,36 @@ def write_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path):
     write_images(im_list, [anms_out_path + "anms" +
                  name for name in image_names])
 
-def feature_visualizer(feature_dict: dict[tuple[int, int]]):
+
+def grayscale_normalize(image: np.matrix) -> np.matrix:
+    smallest = np.min(image)
+    largest  = np.max(image)
+    
+    return 255*(image - smallest) / (largest - smallest) 
+
+def write_feature_images(feature_dict: dict[tuple[int, int]], image_name, feature_outpath):
     # count keys, find a squareish number
     # 500 8x8s to stack
-    if len(feature_dict.keys() != NUM_BEST_CORNERS):
+    if len(feature_dict.keys()) != NUM_BEST_CORNERS:
         return
 
     counter = 0
-    FD_image = np.zeros(((20*8), 25*8))
+    FD_image = []  # np.zeros(((20*8), 25*8))
     FD_row = []
 
-    for coord, feature in feature_dict:
-        return
-        
+    for coord, feature in feature_dict.items():
+        feature_square = copy.deepcopy(np.reshape(feature, ((8, 8))))
+        feature_square = grayscale_normalize(feature_square)
+        FD_row.append(feature_square)
+        counter += 1
+        if counter % 20 == 0:
+            FD_image.append(np.hstack(FD_row))
+            FD_row = []
+    FD_image = np.vstack(FD_image)
+    cv2.imwrite(feature_outpath + image_name, FD_image)
+    return
+
+
 def corner_viewer(corner_responses: Union[list[cv2.Mat], cv2.Mat], images_RGB: Union[list[np.ndarray], np.ndarray]) -> Union[list[np.ndarray], np.ndarray]:
     if type(corner_responses) == list and type(images_RGB) == list:
         corner_images = []
@@ -206,43 +223,24 @@ def feature_matcher(feature_dict_1: dict, feature_dict_2: dict, ratio_threshold=
         if distance_ratio < 0.7:
             output_dictionary[image_1_point] = best_match
     return output_dictionary
-    
-def visualize_matches(image_pair, match_dict: dict):
-    # translate match pair into two  
-    points1_list = list(match_dict.keys())
-    keypoints1 = []
 
-    for i in range(0,len(points1_list)):
-        point = cv2.KeyPoint(float(points1_list[i][0]), float(points1_list[i][1]), 1.0)
-        keypoints1.append(point)
-
-    keypoints2 = []
-    match_pairs = []
-    for i in range(0, len(keypoints1)):
-        point2 = match_dict[points1_list[i]]
-        point2 = cv2.KeyPoint(float(point2[0]), float(point2[1]), 1.0)
-
-        keypoints2.append(point2)
-        
-        match_pairs.append(cv2.DMatch(_queryIdx=i, _trainIdx=i, _distance=0))
-        
-    
-    outimage = cv2.drawMatches(image_pair[0], keypoints1, image_pair[1], keypoints2, match_pairs, None) # outImg=cv2.DRAW_MATCHES_FLAGS_DEFAULT, matchesThickness=1
-    cv2.imshow('outimage', outimage)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-def draw_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict):
+def write_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict, match_outpath, image_pair_names):
     concat_image = cv2.hconcat([image1, image2])
+    if DEBUG_LEVEL == 1:
+        cv2.imshow('image', concat_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
     for point1, point2 in matches_dict.items():
-        cv2.circle(concat_image, (point1[1], point1[0]), 1, (0,0,255), 2)
-        cv2.circle(concat_image, (point2[1]+image1.shape[1], point2[0]), 1, (255,0,0), 2)
-        cv2.line(concat_image, (point1[1], point1[0]), (point2[1]+image1.shape[1], point2[0]), (0, 255, 255), 1)
-        
-    cv2.imshow('image', concat_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    return
+        cv2.circle(concat_image, (point1[1], point1[0]), 1, (0, 0, 255), 2)
+        cv2.circle(
+            concat_image, (point2[1]+image1.shape[1], point2[0]), 1, (255, 0, 0), 2)
+        cv2.line(concat_image, (point1[1], point1[0]),
+                 (point2[1]+image1.shape[1], point2[0]), (0, 255, 255), 1)
+
+    name1_header = image_pair_names[0].split(".")[0]
+    name2_header = image_pair_names[1].split(".")[0]
+    cv2.imwrite(match_outpath+name1_header + "and" + name2_header + ".jpg", concat_image)
+
 
 def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
     key_list = list(matches_dict.keys())
@@ -359,34 +357,34 @@ def main():
     feature_dict0 = feature_descriptor(ANMS_output[0], images_gray[0])
     feature_dict1 = feature_descriptor(ANMS_output[1], images_gray[1])
 
-    # write_feature_images()
-    
+    fd_outpath = OutputPath + "FD/"
+    if not os.path.isdir(fd_outpath):
+        os.mkdir(fd_outpath)
+    write_feature_images(feature_dict0, image_names[0], fd_outpath + "FD")
+
     # cv2.imshow("Original", images_RGB[0])
     # cv2.imshow("Padded", cv2.copyMakeBorder(images_RGB[0], 20, 20, 20, 20, cv2.BORDER_REFLECT))
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
 
-    # TODO save FD.png (stack feature vectors into one image)
-
-
-
     """
         Feature Matching
         Save Feature Matching output as matching.png
         """
-    
+    match_outpath = OutputPath + "Match/"
+    if not os.path.isdir(match_outpath):
+        os.mkdir(match_outpath)
     match_dict = feature_matcher(feature_dict0, feature_dict1)
-    good_matches = RANSAC(match_dict)
-
-    # visualize_matches((images_RGB[0], images_RGB[1]), match_dict)
-    # cv2.imshow("image 1", corner_images[0])
-    # cv2.imshow("image 2", corner_images[1])
-    draw_matches(images_RGB[0], images_RGB[1], good_matches)
-
+    write_matches(images_RGB[0], images_RGB[1], match_dict, match_outpath + "Match", (image_names[0], image_names[1]))
 
     """
         Refine: RANSAC, Estimate Homography
         """
+
+    good_matches = RANSAC(match_dict)
+    print(f"[{image_names[0]}] Found {len(good_matches)} good matches ({round(100*len(good_matches)/(len(match_dict)), 3)} %) ")
+
+    write_matches(images_RGB[0], images_RGB[1], good_matches, match_outpath+ "RANSAC", (image_names[0], image_names[1]))
 
     """
         Image Warping + Blending
