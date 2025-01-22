@@ -222,9 +222,17 @@ def visualize_matches(image_pair, match_dict: dict):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-# def draw_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict):
-#     concat_image = cv2.h
-#     return
+def draw_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict):
+    concat_image = cv2.hconcat([image1, image2])
+    for point1, point2 in matches_dict.items():
+        cv2.circle(concat_image, (point1[1], point1[0]), 1, (0,0,255), 2)
+        cv2.circle(concat_image, (point2[1]+image1.shape[1], point2[0]), 1, (255,0,0), 2)
+        cv2.line(concat_image, (point1[1], point1[0]), (point2[1]+image1.shape[1], point2[0]), (0, 255, 255), 1)
+        
+    cv2.imshow('image', concat_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    return
 
 def main():
     # Add any Command Line arguments here
@@ -300,7 +308,10 @@ def main():
     
     match_dict = feature_matcher(feature_dict0, feature_dict1)
 
-    visualize_matches((images_RGB[0], images_RGB[1]), match_dict)
+    # visualize_matches((images_RGB[0], images_RGB[1]), match_dict)
+    cv2.imshow("image 1", corner_images[0])
+    cv2.imshow("image 2", corner_images[1])
+    draw_matches(images_RGB[0], images_RGB[1], match_dict)
 
 
     """
