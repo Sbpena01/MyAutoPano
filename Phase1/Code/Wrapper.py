@@ -25,6 +25,7 @@ import random
 import hashlib
 from typing import Union
 import matplotlib.pyplot as plt
+from scipy.optimize import least_squares
 
 CORNER_SCORE_THRESHOLD = 0.01
 REGION_MAX_KERNEL = 5
@@ -247,19 +248,19 @@ def write_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict, ma
     cv2.imwrite(match_outpath+name1_header + "and" + name2_header + ".jpg", concat_image)
 
 
-def refine_homography(inliers_dict):
-    homography_list = np.zeros((N_MAX2,9))
-    for i in range(N_MAX2):
-        rand_h = generate_random_homography(inliers_dict)
-        # print(np.round(rand_h, decimals=2))
-        # print()
-        homography_list[i] = rand_h.reshape((1,9))
+# def refine_homography(inliers_dict):
+#     homography_list = np.zeros((N_MAX2,9))
+#     for i in range(N_MAX2):
+#         rand_h = generate_random_homography(inliers_dict)
+#         # print(np.round(rand_h, decimals=2))
+#         # print()
+#         homography_list[i] = rand_h.reshape((1,9))
 
-    # compute mean
-    mean = np.mean(homography_list, axis=0)
-    # reshape to 3x3
-    print(mean.reshape((3,3)))
-    return mean.reshape((3,3))
+#     # compute mean
+#     mean = np.mean(homography_list, axis=0)
+#     # reshape to 3x3
+#     print(mean.reshape((3,3)))
+#     return mean.reshape((3,3))
 
 def generate_random_homography(matches_dict: dict):
     key_list = list(matches_dict.keys())
@@ -309,7 +310,9 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
             best_homography = H
 
     print(best_homography)
-    return best_inlier_dict, best_homography
+    refined_homography_result = least_squares(homography_error_function, best_homography.flatten(), args=[best_inlier_dict])
+
+    return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
 
 def compute_homography(points_1, points_2):
     p1, p2, p3, p4 = points_1
@@ -335,6 +338,24 @@ def compute_homography(points_1, points_2):
     H = np.linalg.solve(P,b)
     H = np.reshape(H, (3,3))
     return H
+
+def homography_error_function(h_guess, inliers_dict):
+    # error = sum( pi_prime - H*pi) for all inliers
+    h_guess = np.reshape(h_guess, (3,3))
+    total_error = 0
+    for pi, pi_p in inliers_dict.items():
+        pi_mat = np.array([
+                [pi[1]],
+                [pi[0]],
+                [1]
+            ])
+        pi_p_mat = np.array([
+                [pi_p[1]],
+                [pi_p[0]],
+                [1]
+            ])
+        total_error += np.sum(np.square(pi_p_mat - np.matmul(h_guess, pi_mat)))
+    return total_error
 
 def main():
     # Add any Command Line arguments here
@@ -418,7 +439,7 @@ def main():
     inliers, homography = RANSAC(match_dict)
     print(f"[{image_names[0]}] Found {len(inliers)} good matches ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
 
-    refine_homography(inliers)
+    # refine_homography(inliers)
 
 
     write_matches(images_RGB[0], images_RGB[1], inliers, match_outpath+ "RANSAC", (image_names[0], image_names[1]))
@@ -427,7 +448,7 @@ def main():
         Image Warping + Blending
         Save Panorama output as mypano.png
         """
-    
+    print(homography)
     p1_tl = np.matmul(homography, np.array([[0], [0], [1]]))
     p1_bl = np.matmul(homography, np.array([[0], [images_RGB[0].shape[0]], [1]]))
     p1_tr = np.matmul(homography, np.array([[images_RGB[0].shape[1]], [0], [1]]))
@@ -444,6 +465,7 @@ def main():
     # y_diff = int(max(point_mat[1]) - min(point_mat[1]))
     dsize = (images_RGB[0].shape[1]+images_RGB[1].shape[1], images_RGB[0].shape[0])
     warpped_image = cv2.warpPerspective(images_RGB[0], M=homography, dsize=dsize)
+    cv2.imshow('warped_alone', warpped_image)
     warpped_image[0:images_RGB[1].shape[0], 0:images_RGB[1].shape[1]] = images_RGB[1]
     
     # print(f"tl: ({p1_tl[0]}, {p1_tl[1]}), br: ({p1_br[0]}, {p1_br[1]})")
