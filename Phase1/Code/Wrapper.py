@@ -31,6 +31,7 @@ REGION_MAX_KERNEL = 5
 CORNER_HARRIS_K = 0.04
 NUM_BEST_CORNERS = 500
 N_MAX = 100
+N_MAX2 = 50
 TAU = 1e4
 INLIER_PERCENT_THRESHOLD = 0.9
 
@@ -246,21 +247,40 @@ def write_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict, ma
     cv2.imwrite(match_outpath+name1_header + "and" + name2_header + ".jpg", concat_image)
 
 
-def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
+def refine_homography(inliers_dict):
+    homography_list = np.zeros((N_MAX2,9))
+    for i in range(N_MAX2):
+        rand_h = generate_random_homography(inliers_dict)
+        # print(np.round(rand_h, decimals=2))
+        # print()
+        homography_list[i] = rand_h.reshape((1,9))
+
+    # compute mean
+    mean = np.mean(homography_list, axis=0)
+    # reshape to 3x3
+    print(mean.reshape((3,3)))
+    return mean.reshape((3,3))
+
+def generate_random_homography(matches_dict: dict):
     key_list = list(matches_dict.keys())
+    points_1 = random.sample(key_list, k=4)
+    points_2 = []
+    for point in points_1:
+        random_value = matches_dict[point]
+        points_2.append(random_value)
+    H = compute_homography(points_1, points_2)
+    if H is None:
+        return generate_random_homography(matches_dict)
+    return H
+
+def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
     best_inlier_percent = 0.0
     best_homography = np.eye(3)
     best_inlier_dict = dict()
     points_1 = []
     points_2 = []
     for _ in range(n_max):
-        points_1 = random.sample(key_list, k=4)
-        points_2 = []
-        for point in points_1:
-            random_value = matches_dict[point]
-            points_2.append(random_value)
-
-        H = compute_homography(points_1, points_2)
+        H = generate_random_homography(matches_dict)
         inliers = dict()
         for point1, point2 in matches_dict.items():
             point1_mat = np.array([
@@ -277,56 +297,18 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
             ssd = np.sum(np.square((point2_mat-point1_p_mat)))
             if ssd < tau:
                 inliers[point1] = point2
-        inlier_percent = len(inliers)/len(key_list)
+        inlier_percent = len(inliers)/len(matches_dict)
         # TODO: If this doesnt work, we need to figure out a better way to create the H from the set of inliers (least-square.. average translation...)
         if inlier_percent >= INLIER_PERCENT_THRESHOLD:
-            best_inlier_percent = inlier_percent
-            best_homography = H
             best_inlier_dict = inliers
+            best_homography = H
             break
         elif inlier_percent > best_inlier_percent:
             best_inlier_percent = inlier_percent
-            best_homography = H
             best_inlier_dict = inliers
-    
-    # Compute least square fit for final homographhy matrix
-    # key_list = list(best_inlier_dict.keys())
-    # points_1 = random.sample(key_list, k=4)
-    # points_2 = []
-    # for point in points_1:
-    #     random_value = best_inlier_dict[point]
-    #     points_2.append(random_value)
-    
-    # best_homography = compute_homography(points_1, points_2)
-    # best_inlier_dict = dict()
-    # for point1, point2 in matches_dict.items():
-    #     point1_mat = np.array([
-    #         [point1[1]],
-    #         [point1[0]],
-    #         [1]
-    #     ])
-    #     point2_mat = np.array([
-    #         [point2[1]],
-    #         [point2[0]],
-    #         [1]
-    #     ])
+            best_homography = H
 
-    # for point1, point2 in matches_dict.items():
-    #         point1_mat = np.array([
-    #             [point1[1]],
-    #             [point1[0]],
-    #             [1]
-    #         ])
-    #         point2_mat = np.array([
-    #             [point2[1]],
-    #             [point2[0]],
-    #             [1]
-    #         ])
-    #         point1_p_mat = np.matmul(H, point1_mat)
-    #         ssd = np.sum(np.square((point2_mat-point1_p_mat)))
-    #         if ssd < tau:
-    #             best_inlier_dict[point1] = point2
-    
+    print(best_homography)
     return best_inlier_dict, best_homography
 
 def compute_homography(points_1, points_2):
@@ -348,6 +330,8 @@ def compute_homography(points_1, points_2):
 
     b = np.zeros((9,1))
     b[8,0] = 1
+    if np.linalg.det(P) == 0:  # Matrix is singular
+        return None
     H = np.linalg.solve(P,b)
     H = np.reshape(H, (3,3))
     return H
@@ -417,11 +401,6 @@ def main():
         os.mkdir(fd_outpath)
     write_feature_images(feature_dict0, image_names[0], fd_outpath + "FD")
 
-    # cv2.imshow("Original", images_RGB[0])
-    # cv2.imshow("Padded", cv2.copyMakeBorder(images_RGB[0], 20, 20, 20, 20, cv2.BORDER_REFLECT))
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-
     """
         Feature Matching
         Save Feature Matching output as matching.png
@@ -436,15 +415,44 @@ def main():
         Refine: RANSAC, Estimate Homography
     """
 
-    good_matches, homography = RANSAC(match_dict)
-    print(f"[{image_names[0]}] Found {len(good_matches)} good matches ({round(100*len(good_matches)/(len(match_dict)), 3)} %) ")
+    inliers, homography = RANSAC(match_dict)
+    print(f"[{image_names[0]}] Found {len(inliers)} good matches ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
 
-    write_matches(images_RGB[0], images_RGB[1], good_matches, match_outpath+ "RANSAC", (image_names[0], image_names[1]))
+    refine_homography(inliers)
+
+
+    write_matches(images_RGB[0], images_RGB[1], inliers, match_outpath+ "RANSAC", (image_names[0], image_names[1]))
 
     """
         Image Warping + Blending
         Save Panorama output as mypano.png
         """
+    
+    p1_tl = np.matmul(homography, np.array([[0], [0], [1]]))
+    p1_bl = np.matmul(homography, np.array([[0], [images_RGB[0].shape[0]], [1]]))
+    p1_tr = np.matmul(homography, np.array([[images_RGB[0].shape[1]], [0], [1]]))
+    p1_br = np.matmul(homography, np.array([[images_RGB[0].shape[1]], [images_RGB[0].shape[0]], [1]]))
+    point_mat = np.reshape(np.array([p1_tl[0:2], p1_bl[0:2], p1_tr[0:2], p1_br[0:2]]), (4,2)).transpose()
+
+    
+    print(point_mat)
+
+    warped_im_x_dim = int(max(point_mat[0]))
+    warped_im_y_dim = int(max(point_mat[1]))
+
+    # x_diff = int(max(point_mat[0]) - min(point_mat[0]))
+    # y_diff = int(max(point_mat[1]) - min(point_mat[1]))
+    dsize = (images_RGB[0].shape[1]+images_RGB[1].shape[1], images_RGB[0].shape[0])
+    warpped_image = cv2.warpPerspective(images_RGB[0], M=homography, dsize=dsize)
+    warpped_image[0:images_RGB[1].shape[0], 0:images_RGB[1].shape[1]] = images_RGB[1]
+    
+    # print(f"tl: ({p1_tl[0]}, {p1_tl[1]}), br: ({p1_br[0]}, {p1_br[1]})")
+
+
+    cv2.imshow('warped', warpped_image)
+    # cv2.imshow('image1', images_RGB[1])
+    cv2.waitKey(0)
+    cv2.destroyAllWindows() 
 
 
 if __name__ == "__main__":
