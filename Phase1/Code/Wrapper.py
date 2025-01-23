@@ -31,7 +31,8 @@ REGION_MAX_KERNEL = 5
 CORNER_HARRIS_K = 0.04
 NUM_BEST_CORNERS = 500
 N_MAX = 100
-TAU = 1e10 # 12,394,530 lowest val so far.. 204,341,212 1,016,789,542
+TAU = 1e4
+INLIER_PERCENT_THRESHOLD = 0.9
 
 DEBUG_LEVEL = 0
 
@@ -101,9 +102,12 @@ def write_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path):
     im_list = []
     for coords_list, image in zip(ANMS_scores, images_RGB):
         im_copy = copy.deepcopy(image)
+        im_mask = np.zeros_like(im_copy)
         for coords in coords_list:
-            im_copy[coords[0], coords[1]] = [0, 0, 255]
-        im_list.append(im_copy)
+            im_mask[coords[0], coords[1]] = 1
+        im_mask = cv2.dilate(im_mask, kernel=cv2.getStructuringElement(3))
+        
+    im_list.append(im_copy)
 
     write_images(im_list, [anms_out_path + "anms" +
                  name for name in image_names])
@@ -113,7 +117,7 @@ def grayscale_normalize(image: np.matrix) -> np.matrix:
     smallest = np.min(image)
     largest  = np.max(image)
     
-    return 255*(image - smallest) / (largest - smallest) 
+    return np.uint8(255*(image - smallest) / (largest - smallest))
 
 def write_feature_images(feature_dict: dict[tuple[int, int]], image_name, feature_outpath):
     # count keys, find a squareish number
@@ -244,19 +248,24 @@ def write_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict, ma
 
 def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
     key_list = list(matches_dict.keys())
-    good_pair_dict = dict()
-    for i in range(n_max):
-        # Get 4 random pairs
+    best_inlier_percent = 0.0
+    best_homography = np.eye(3)
+    best_inlier_dict = dict()
+    points_1 = []
+    points_2 = []
+    for _ in range(n_max):
         points_1 = random.sample(key_list, k=4)
-        points_2 = list()
+        points_2 = []
         for point in points_1:
             random_value = matches_dict[point]
             points_2.append(random_value)
+
         H = compute_homography(points_1, points_2)
-        for point, point2 in zip(points_1, points_2):
+        inliers = dict()
+        for point1, point2 in matches_dict.items():
             point1_mat = np.array([
-                [point[1]],
-                [point[0]],
+                [point1[1]],
+                [point1[0]],
                 [1]
             ])
             point2_mat = np.array([
@@ -264,12 +273,61 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
                 [point2[0]],
                 [1]
             ])
-            point1_p_mat = H*point1_mat
+            point1_p_mat = np.matmul(H, point1_mat)
             ssd = np.sum(np.square((point2_mat-point1_p_mat)))
-            print(ssd)
             if ssd < tau:
-                good_pair_dict[point] = point2
-    return good_pair_dict
+                inliers[point1] = point2
+        inlier_percent = len(inliers)/len(key_list)
+        # TODO: If this doesnt work, we need to figure out a better way to create the H from the set of inliers (least-square.. average translation...)
+        if inlier_percent >= INLIER_PERCENT_THRESHOLD:
+            best_inlier_percent = inlier_percent
+            best_homography = H
+            best_inlier_dict = inliers
+            break
+        elif inlier_percent > best_inlier_percent:
+            best_inlier_percent = inlier_percent
+            best_homography = H
+            best_inlier_dict = inliers
+    
+    # Compute least square fit for final homographhy matrix
+    # key_list = list(best_inlier_dict.keys())
+    # points_1 = random.sample(key_list, k=4)
+    # points_2 = []
+    # for point in points_1:
+    #     random_value = best_inlier_dict[point]
+    #     points_2.append(random_value)
+    
+    # best_homography = compute_homography(points_1, points_2)
+    # best_inlier_dict = dict()
+    # for point1, point2 in matches_dict.items():
+    #     point1_mat = np.array([
+    #         [point1[1]],
+    #         [point1[0]],
+    #         [1]
+    #     ])
+    #     point2_mat = np.array([
+    #         [point2[1]],
+    #         [point2[0]],
+    #         [1]
+    #     ])
+
+    # for point1, point2 in matches_dict.items():
+    #         point1_mat = np.array([
+    #             [point1[1]],
+    #             [point1[0]],
+    #             [1]
+    #         ])
+    #         point2_mat = np.array([
+    #             [point2[1]],
+    #             [point2[0]],
+    #             [1]
+    #         ])
+    #         point1_p_mat = np.matmul(H, point1_mat)
+    #         ssd = np.sum(np.square((point2_mat-point1_p_mat)))
+    #         if ssd < tau:
+    #             best_inlier_dict[point1] = point2
+    
+    return best_inlier_dict, best_homography
 
 def compute_homography(points_1, points_2):
     p1, p2, p3, p4 = points_1
@@ -292,9 +350,6 @@ def compute_homography(points_1, points_2):
     b[8,0] = 1
     H = np.linalg.solve(P,b)
     H = np.reshape(H, (3,3))
-    # print(P)
-    # print(b)
-    # print(H)
     return H
 
 def main():
@@ -348,7 +403,7 @@ def main():
     if not os.path.isdir(anms_out_path):
         os.mkdir(anms_out_path)
 
-    write_anms_images(ANMS_output, images_RGB, image_names, anms_out_path)
+    # write_anms_images(ANMS_output, images_RGB, image_names, anms_out_path)
 
     """
         Feature Descriptors
@@ -379,9 +434,9 @@ def main():
 
     """
         Refine: RANSAC, Estimate Homography
-        """
+    """
 
-    good_matches = RANSAC(match_dict)
+    good_matches, homography = RANSAC(match_dict)
     print(f"[{image_names[0]}] Found {len(good_matches)} good matches ({round(100*len(good_matches)/(len(match_dict)), 3)} %) ")
 
     write_matches(images_RGB[0], images_RGB[1], good_matches, match_outpath+ "RANSAC", (image_names[0], image_names[1]))
