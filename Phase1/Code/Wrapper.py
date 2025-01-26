@@ -26,6 +26,7 @@ import hashlib
 from typing import Union
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
+from Wrapper_Utilities import Point, Bounding_Box
 
 CORNER_SCORE_THRESHOLD = 0.01
 REGION_MAX_KERNEL = 5
@@ -35,6 +36,8 @@ N_MAX = 100
 N_MAX2 = 50
 TAU = 1e4
 INLIER_PERCENT_THRESHOLD = 0.9
+DISTANCE_RATIO_MAX = 0.7
+
 
 DEBUG_LEVEL = 0
 
@@ -62,7 +65,7 @@ def ANMS(corner_responses, num_best_corners) -> list[list[tuple[int, int]]]:
         local_maxima = np.argwhere(output_mask)
         r = {}
         for i in local_maxima:
-            pixel_coord = tuple(i)
+            pixel_coord = Point(tuple(i))
             r[pixel_coord] = np.inf
             ED = np.inf
             for j in local_maxima:
@@ -106,7 +109,7 @@ def write_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path):
         im_copy = copy.deepcopy(image)
         im_mask = np.zeros_like(im_copy)
         for coords in coords_list:
-            im_mask[coords[0], coords[1]] = 1
+            im_mask[coords.y, coords.x] = 1
         im_mask = cv2.dilate(im_mask, kernel=cv2.getStructuringElement(3))
         
     im_list.append(im_copy)
@@ -191,16 +194,16 @@ def get_subset(matrix: np.ndarray, subset_size:tuple):
             output[i, j] = matrix[row_coordinates_int[i]-1, column_coordinates_int[j]-1]
     return output
 
-def feature_descriptor(best_corners: list, original_image: np.ndarray):
+def feature_descriptor(best_corners: list[Point], original_image: np.ndarray):
     padded_image = cv2.copyMakeBorder(original_image, 20, 20, 20, 20, cv2.BORDER_REFLECT)
     feature_dict = dict()
     for corner in best_corners:
         # must shift all coords over by 20 as we are expanding the image
-        min_x = corner[0]
-        max_x = corner[0] + 41
-        min_y = corner[1]
-        max_y = corner[1] + 41
-        sub_region = padded_image[min_x:max_x, min_y:max_y]
+        min_x = corner.x
+        max_x = corner.x + 41
+        min_y = corner.y
+        max_y = corner.y + 41
+        sub_region = padded_image[min_y:max_y, min_x:max_x]
         blurred_region = cv2.GaussianBlur(sub_region, ksize=(5,5), sigmaX=1, sigmaY=1)
         sub_samble = get_subset(blurred_region, (8, 8))
         # cv2.imshow('image', sub)
@@ -209,7 +212,7 @@ def feature_descriptor(best_corners: list, original_image: np.ndarray):
         sub_sample_reshaped = np.reshape(sub_samble, -1)
         mean = np.mean(sub_sample_reshaped)
         std = np.std(sub_sample_reshaped)
-        feature_dict[(corner[0], corner[1])] = (sub_sample_reshaped - mean) / std
+        feature_dict[corner] = (sub_sample_reshaped - mean) / std
     return feature_dict
 
 def feature_matcher(feature_dict_1: dict, feature_dict_2: dict, ratio_threshold=0.8):
@@ -226,7 +229,7 @@ def feature_matcher(feature_dict_1: dict, feature_dict_2: dict, ratio_threshold=
                 lowest_distance = squared_distance
                 best_match = image_2_point
         distance_ratio = lowest_distance/second_lowest_distance
-        if distance_ratio < 0.7:
+        if distance_ratio < DISTANCE_RATIO_MAX:
             output_dictionary[image_1_point] = best_match
     return output_dictionary
 
@@ -237,30 +240,15 @@ def write_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict, ma
         cv2.waitKey(0)
         cv2.destroyAllWindows()
     for point1, point2 in matches_dict.items():
-        cv2.circle(concat_image, (point1[1], point1[0]), 1, (0, 0, 255), 2)
+        cv2.circle(concat_image, (point1.x, point1.y), 1, (0, 0, 255), 2)
         cv2.circle(
-            concat_image, (point2[1]+image1.shape[1], point2[0]), 1, (255, 0, 0), 2)
-        cv2.line(concat_image, (point1[1], point1[0]),
-                 (point2[1]+image1.shape[1], point2[0]), (0, 255, 255), 1)
+            concat_image, (point2.x+image1.shape[1], point2.y), 1, (255, 0, 0), 2)
+        cv2.line(concat_image, (point1.x, point1.y),
+                 (point2.x+image1.shape[1], point2.y), (0, 255, 255), 1)
 
     name1_header = image_pair_names[0].split(".")[0]
     name2_header = image_pair_names[1].split(".")[0]
     cv2.imwrite(match_outpath+name1_header + "and" + name2_header + ".jpg", concat_image)
-
-
-# def refine_homography(inliers_dict):
-#     homography_list = np.zeros((N_MAX2,9))
-#     for i in range(N_MAX2):
-#         rand_h = generate_random_homography(inliers_dict)
-#         # print(np.round(rand_h, decimals=2))
-#         # print()
-#         homography_list[i] = rand_h.reshape((1,9))
-
-#     # compute mean
-#     mean = np.mean(homography_list, axis=0)
-#     # reshape to 3x3
-#     print(mean.reshape((3,3)))
-#     return mean.reshape((3,3))
 
 def generate_random_homography(matches_dict: dict):
     key_list = list(matches_dict.keys())
@@ -269,33 +257,39 @@ def generate_random_homography(matches_dict: dict):
     for point in points_1:
         random_value = matches_dict[point]
         points_2.append(random_value)
-    H = compute_homography(points_1, points_2)
+    
+    # Convert to numpy arrays
+    # H = compute_homography(points_1, points_2)
+    arr1 = np.array([point.to_numpy() for point in points_1], dtype=np.float32)
+    arr2 = np.array([point.to_numpy() for point in points_2], dtype=np.float32)
+    H = cv2.getPerspectiveTransform(arr1, arr2)
     if H is None:
         return generate_random_homography(matches_dict)
     return H
+
+def compute_point_ssd(point1: Point, point2: Point, H: np.ndarray) -> float:
+    point1_mat = np.array([
+        [point1.x],
+        [point1.y],
+        [1]
+    ])
+    point2_mat = np.array([
+        [point2.x],
+        [point2.y],
+        [1]
+    ])
+    point1_p_mat = np.matmul(H, point1_mat)
+    return np.sum(np.square((point2_mat-point1_p_mat)))
 
 def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
     best_inlier_percent = 0.0
     best_homography = np.eye(3)
     best_inlier_dict = dict()
-    points_1 = []
-    points_2 = []
     for _ in range(n_max):
         H = generate_random_homography(matches_dict)
         inliers = dict()
         for point1, point2 in matches_dict.items():
-            point1_mat = np.array([
-                [point1[1]],
-                [point1[0]],
-                [1]
-            ])
-            point2_mat = np.array([
-                [point2[1]],
-                [point2[0]],
-                [1]
-            ])
-            point1_p_mat = np.matmul(H, point1_mat)
-            ssd = np.sum(np.square((point2_mat-point1_p_mat)))
+            ssd = compute_point_ssd(point1, point2, H)
             if ssd < tau:
                 inliers[point1] = point2
         inlier_percent = len(inliers)/len(matches_dict)
@@ -310,9 +304,14 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
             best_homography = H
 
     print(best_homography)
-    refined_homography_result = least_squares(homography_error_function, best_homography.flatten(), args=[best_inlier_dict])
+    if DEBUG_LEVEL > 0:
+        verbose = 2
+    else:
+        verbose = 0
+    refined_homography_result = least_squares(homography_error_function, best_homography.flatten(), args=[best_inlier_dict], loss='cauchy', verbose=verbose)
 
-    return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
+    # return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
+    return best_inlier_dict, best_homography
 
 def compute_homography(points_1, points_2):
     p1, p2, p3, p4 = points_1
@@ -344,18 +343,15 @@ def homography_error_function(h_guess, inliers_dict):
     h_guess = np.reshape(h_guess, (3,3))
     total_error = 0
     for pi, pi_p in inliers_dict.items():
-        pi_mat = np.array([
-                [pi[1]],
-                [pi[0]],
-                [1]
-            ])
-        pi_p_mat = np.array([
-                [pi_p[1]],
-                [pi_p[0]],
-                [1]
-            ])
-        total_error += np.sum(np.square(pi_p_mat - np.matmul(h_guess, pi_mat)))
+        total_error += compute_point_ssd(pi, pi_p, h_guess)
     return total_error
+
+def find_intersection(box_1: Bounding_Box, box_2: Bounding_Box):
+    top_left = Point((max(box_1.tl.x, box_2.tl.x), max(box_1.tl.y, box_2.tl.y)))
+    top_right = Point((min(box_1.tr.x, box_2.tr.x), max(box_1.tr.y, box_2.tr.y)))
+    bottom_left = Point((max(box_1.bl.x, box_2.bl.x), min(box_1.bl.y, box_2.bl.y)))
+    bottom_right = Point((min(box_1.br.x, box_2.br.x), min(box_1.br.y, box_2.br.y)))
+    return Bounding_Box(top_left, top_right, bottom_left, bottom_right)
 
 def main():
     # Add any Command Line arguments here
@@ -448,33 +444,84 @@ def main():
         Image Warping + Blending
         Save Panorama output as mypano.png
         """
-    print(homography)
     p1_tl = np.matmul(homography, np.array([[0], [0], [1]]))
+    p1_tl = Point((p1_tl[1], p1_tl[0]))
     p1_bl = np.matmul(homography, np.array([[0], [images_RGB[0].shape[0]], [1]]))
+    p1_bl = Point((p1_bl[1], p1_bl[0]))
     p1_tr = np.matmul(homography, np.array([[images_RGB[0].shape[1]], [0], [1]]))
+    p1_tr = Point((p1_tr[1], p1_tr[0]))
     p1_br = np.matmul(homography, np.array([[images_RGB[0].shape[1]], [images_RGB[0].shape[0]], [1]]))
-    point_mat = np.reshape(np.array([p1_tl[0:2], p1_bl[0:2], p1_tr[0:2], p1_br[0:2]]), (4,2)).transpose()
-
+    p1_br = Point((p1_br[1], p1_br[0]))
     
-    print(point_mat)
+    # im_warped_BB = Bounding_Box(p1_tl, p1_tr, p1_bl, p1_br)
+    # im_original_BB = Bounding_Box(Point((0,0)), Point((0,images_RGB[0].shape[1])), Point((images_RGB[0].shape[0], 0)), Point((images_RGB[0].shape[0],images_RGB[0].shape[1])))
 
-    warped_im_x_dim = int(max(point_mat[0]))
-    warped_im_y_dim = int(max(point_mat[1]))
+    largest_warped_Y = max(p1_bl.y, p1_br.y)
+    smallest_warped_Y = min(p1_tl.y, p1_tr.y)
 
-    # x_diff = int(max(point_mat[0]) - min(point_mat[0]))
-    # y_diff = int(max(point_mat[1]) - min(point_mat[1]))
-    dsize = (images_RGB[0].shape[1]+images_RGB[1].shape[1], images_RGB[0].shape[0])
-    warpped_image = cv2.warpPerspective(images_RGB[0], M=homography, dsize=dsize)
-    cv2.imshow('warped_alone', warpped_image)
-    warpped_image[0:images_RGB[1].shape[0], 0:images_RGB[1].shape[1]] = images_RGB[1]
+    Y = max(images_RGB[1].shape[0], largest_warped_Y) - min(0, smallest_warped_Y) + max(p1_tl.y, p1_tr.y)
+
+    largest_warped_X = max(p1_br.x, p1_tr.x)
+    smallest_warped_X = min(p1_tl.x, p1_bl.x)
+
+    X = max(images_RGB[1].shape[1], largest_warped_X) - min(0, smallest_warped_X) + max(p1_tl.x, p1_bl.x)
+    dsize = (X, Y)
     
-    # print(f"tl: ({p1_tl[0]}, {p1_tl[1]}), br: ({p1_br[0]}, {p1_br[1]})")
+    # src_points = np.array([
+    #     [0, 0, 1],
+    #     [0, images_RGB[0].shape[0], 1],
+    #     [images_RGB[0].shape[1], 0, 1],
+    #     [images_RGB[0].shape[1], images_RGB[0].shape[0], 1]
+    # ])
+    # dst_points = cv2.perspectiveTransform(np.float32([src_points]), homography)
+    # min_x, min_y = np.min(dst_points, axis=0)[0]
+    # max_x, max_y = np.max(dst_points, axis=0)[0]
 
+    # # Set dsize
+    # dsize = (int(max_x - min_x), int(max_y - min_y))
 
-    cv2.imshow('warped', warpped_image)
-    # cv2.imshow('image1', images_RGB[1])
+    warped_image = cv2.warpPerspective(images_RGB[0], M=homography, dsize=dsize)
+    cv2.imshow('warped_alone', warped_image)
+    print(images_RGB[1].shape)
+    print(warped_image.shape)
+
+    # not neccesarily zero.  TODO: fix
+    warped_image[0:450, 0:600] = images_RGB[1]
+    cv2.imshow('warped', warped_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows() 
+    
+    # print(f"tl: ({p1_tl[0]}, {p1_tl[1]}), br: ({p1_br[0]}, {p1_br[1]})")
+    # image_intersection = find_intersection(im_warped_BB, im_original_BB)
+
+    # blend_mask = np.ones_like(images_RGB[1]) * 255
+
+    # for y in range(images_RGB[1].shape[0]):
+    #     for x in range(images_RGB[1].shape[1]):
+    #         warped_pixel = warped_image[y,x]
+    #         if np.equal(warped_pixel, np.array([0,0,0])).all():
+    #             blend_mask[y,x] = 255
+
+    # cv2.imshow('image_mask', blend_mask)
+    # print(images_RGB[1].shape)
+    # print(warped_image.shape)
+    # print(blend_mask.shape)
+    # warped_image = cv2.seamlessClone(images_RGB[1], warped_image, blend_mask, (300,225), flags=cv2.NORMAL_CLONE)
+
+    # blend_mask = np.ones_like(warped_image) * 255
+
+    # for y in range(warped_image.shape[0]):
+    #     for x in range(warped_image.shape[1]):
+    #         warped_pixel = warped_image[y,x]
+    #         if np.equal(warped_pixel, np.array([0,0,0])).all():
+    #             blend_mask[y,x] = 0
+
+    # cv2.imshow('image_mask', blend_mask)
+    # print(images_RGB[1].shape)
+    # print(warped_image.shape)
+    # print(blend_mask.shape)
+    # warped_image = cv2.seamlessClone(warped_image, images_RGB[1], blend_mask, (int(warped_image.shape[0]/2), int(warped_image.shape[1]/2)), flags=cv2.NORMAL_CLONE)
+
 
 
 if __name__ == "__main__":
