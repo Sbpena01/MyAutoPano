@@ -82,6 +82,30 @@ def ANMS(corner_responses, num_best_corners) -> list[list[tuple[int, int]]]:
             n_best.append(inf_removed[i][0])
         n_best_list.append(n_best)
     return n_best_list
+    
+def ANMS_singluar(corner_response, num_best_corners) -> list[tuple[int, int]]:
+    # Gets the regional maximums and their coordinates
+    n_best = []
+    output_mask = region_maxima(corner_response, REGION_MAX_KERNEL)
+    local_maxima = np.argwhere(output_mask)
+    r = {}
+    for i in local_maxima:
+        pixel_coord = Point(tuple(i))
+        r[pixel_coord] = np.inf
+        ED = np.inf
+        for j in local_maxima:
+            if corner_response[j[0], j[1]] > corner_response[i[0], i[1]]:
+                ED = (j[0] - i[0])**2 + (j[1]-i[1])**2
+            if ED < r[pixel_coord]:
+                r[pixel_coord] = ED
+    list = sorted(r.items(), key=lambda item: item[1])
+    list.reverse()
+    inf_removed = [x for x in list if x[1] != np.inf]
+    n_best = []
+    # for loop could be replaced by slice ':' operator
+    for i in range(num_best_corners):
+        n_best.append(inf_removed[i][0])
+    return n_best
 
 # relative path to dataset
 def load_images(im_path: str, flags: int = cv2.IMREAD_GRAYSCALE) -> tuple[list[cv2.Mat], list[str]]:
@@ -182,6 +206,23 @@ def generate_corner_responses(images_gray: list[np.ndarray], image_names: list[s
         corner_responses.append(response)
         corner_counts.append(count)
     return corner_responses, corner_counts
+
+def generate_corner_response(images_gray: np.ndarray, image_name: str) -> tuple[np.ndarray, int]:
+    response = cv2.cornerHarris(
+        src=images_gray, blockSize=2, ksize=3, k=CORNER_HARRIS_K)
+    threshold = CORNER_SCORE_THRESHOLD * response.max()
+    corner_image_mask = response > threshold
+    count = np.sum(corner_image_mask)
+    print(f"[{image_name}]: Found {count} corners ({
+            round(100*count/(images_gray.shape[0]*images_gray.shape[1]), 3)}%)")
+    if DEBUG_LEVEL > 0:
+        plt.hist(response.flatten(), bins=1000)
+        plt.axvline(x=threshold, color='red', linestyle='--',
+                    linewidth=2, label=f'x = {threshold}')
+        plt.ylim([0, 500])
+        plt.show()
+    response = np.multiply(np.uint8(corner_image_mask), response)
+    return response, count
 
 def get_subset(matrix: np.ndarray, subset_size:tuple):
     column_coordinates_float = np.linspace(0, matrix.shape[0], subset_size[0])
@@ -353,6 +394,46 @@ def find_intersection(box_1: Bounding_Box, box_2: Bounding_Box):
     bottom_right = Point((min(box_1.br.x, box_2.br.x), min(box_1.br.y, box_2.br.y)))
     return Bounding_Box(top_left, top_right, bottom_left, bottom_right)
 
+
+def warp_and_stitch(homography, image, panorama):
+    p1_tl = np.matmul(homography, np.array([[0], [0], [1]]))
+    p1_tl = Point((p1_tl[1], p1_tl[0]))
+    p1_bl = np.matmul(homography, np.array([[0], [image.shape[0]], [1]]))
+    p1_bl = Point((p1_bl[1], p1_bl[0]))
+    p1_tr = np.matmul(homography, np.array([[image.shape[1]], [0], [1]]))
+    p1_tr = Point((p1_tr[1], p1_tr[0]))
+    p1_br = np.matmul(homography, np.array([[image.shape[1]], [image.shape[0]], [1]]))
+    p1_br = Point((p1_br[1], p1_br[0]))
+
+    largest_warped_Y = max(p1_bl.y, p1_br.y)
+    smallest_warped_Y = min(p1_tl.y, p1_tr.y)
+
+    largest_warped_X = max(p1_br.x, p1_tr.x)
+    smallest_warped_X = min(p1_tl.x, p1_bl.x)
+
+    if smallest_warped_X < 0 or smallest_warped_Y < 0:
+        T = np.array([
+            [1, 0, max(0, -smallest_warped_X)],
+            [0, 1, max(0, -smallest_warped_Y)],
+            [0, 0, 1]
+        ])
+    else:
+        T = np.eye(3)
+    H_translated = np.matmul(homography, T)
+    
+    # Y = max(panorama.shape[0], largest_warped_Y) - min(0, smallest_warped_Y) + abs(max(p1_tl.y, p1_tr.y))
+    # X = max(panorama.shape[1], largest_warped_X) - min(0, smallest_warped_X) + abs(max(p1_tl.x, p1_bl.x))
+    Y = max(panorama.shape[0], largest_warped_Y) - min(0, smallest_warped_Y)
+    X = max(panorama.shape[1], largest_warped_X) - min(0, smallest_warped_X)
+
+    warped_image = cv2.warpPerspective(image, M=H_translated, dsize=(X,Y))
+    cv2.imshow('warped_alone', warped_image)
+    # not neccesarily zero.  TODO: fix
+    new_image = np.zeros((image.shape[0] + int(abs(H_translated[0,2])), image.shape[1] +  int(abs(H_translated[1,2])), 3))
+    print(new_image.shape)
+    new_image[0:panorama.shape[0], 0:panorama.shape[1]] = panorama
+    return new_image
+
 def main():
     # Add any Command Line arguments here
     Parser = argparse.ArgumentParser()
@@ -375,16 +456,46 @@ def main():
     Read a set of images for Panorama stitching
     """
     images_RGB, image_names = load_images(ImagePath, cv2.IMREAD_COLOR)
-    images_gray, __ = load_images(ImagePath, cv2.IMREAD_GRAYSCALE)
+    # images_gray, __ = load_images(ImagePath, cv2.IMREAD_GRAYSCALE)
 
     if not os.path.isdir(OutputPath):
         os.mkdir(OutputPath)
 
+    panorama = images_RGB.pop(0)
+    image_names.pop(0)  # Clears first name from list.
+    
+    for image in images_RGB:
+        image_name = image_names.pop(0)
+        image_to_greyscale = copy.deepcopy(image)
+        greyscaled_image = cv2.cvtColor(image_to_greyscale, cv2.COLOR_BGR2GRAY)
+        pano_to_greyscale = copy.deepcopy(panorama)
+        greyscaled_pano = cv2.cvtColor(pano_to_greyscale, cv2.COLOR_BGR2GRAY)
+        
+        corner_response_image, count = generate_corner_response(greyscaled_image, image_name)
+        corner_response_pano, count_pano = generate_corner_response(greyscaled_pano, "Pano")
+
+        image_anms = ANMS_singluar(corner_response_image, NUM_BEST_CORNERS)
+        pano_anms = ANMS_singluar(corner_response_pano, NUM_BEST_CORNERS)
+        
+        image_feature_dict = feature_descriptor(image_anms, greyscaled_image)
+        pano_feature_dict = feature_descriptor(pano_anms, greyscaled_pano)
+        
+        match_dict = feature_matcher(image_feature_dict, pano_feature_dict)
+
+        inliers, homography = RANSAC(match_dict)
+
+        # dsize = generate_dsize(homography, image.shape, panorama.shape)
+        
+        panorama = warp_and_stitch(homography, image, panorama)
+        cv2.imshow('panorama', panorama)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
     """
         Corner Detection
         Save Corner detection output as corners.png
         """
-    corner_responses, corner_count = generate_corner_responses(
+    corner_responses, corner_count = generate_corner_response(
         images_gray, image_names)
 
     corner_images = corner_viewer(corner_responses, images_RGB)
