@@ -35,12 +35,13 @@ NUM_BEST_CORNERS = 500 # from 500
 N_MAX = 1000 # from 100
 TAU = 1e4 # from 1e4
 INLIER_PERCENT_THRESHOLD = 0.75 # from 0.9
-DISTANCE_RATIO_MAX = 0.7 # from 0.7
-MATCH_COUNT_THRESHOLD = 5
+DISTANCE_RATIO_MAX = 0.8 # from 0.7
+MATCH_COUNT_THRESHOLD = 15 # from 5
 DISTANCE_RATIO_MAX = 0.5 # from 0.7
 PANORAMA_WEIGHT = 0.8
 WARPED_WEIGHT = 1.0 - PANORAMA_WEIGHT
-MAX_CORNER_THRESH = 3000
+MAX_CORNER_THRESH = 6000
+REJECTION_THRESHHOLD = 0.117
 
 DEBUG_LEVEL = 0
 
@@ -360,11 +361,28 @@ def remove_obvious_outliers(matches_dict: dict):
         output[key] = value
     return output
 
+
+def refine_RANSAC(inliers_dict: dict, n_max=N_MAX):
+    smallest_loss = np.inf
+    best_H = np.ones((3,3))
+    for _ in range(n_max):
+        total_loss = 0
+        H = generate_random_homography(inliers_dict)
+        for point1, point2 in inliers_dict.items():
+            total_loss += compute_point_ssd(point1, point2, H)
+        if total_loss < smallest_loss:
+            smallest_loss = total_loss
+            best_H = H
+    return best_H
+
 def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
     best_inlier_percent = 0.0
     best_homography = np.eye(3)
     best_inlier_dict = dict()
     matches_dict = remove_obvious_outliers(matches_dict)
+    if len(matches_dict) < 4:
+        return [], np.eyes((3,3))
+
     for _ in range(n_max):
         H = generate_random_homography(matches_dict)
         inliers = dict()
@@ -475,15 +493,14 @@ def warp_and_stitch(homography, image, panorama):
     for y in range(warped_image.shape[0]):
         for x in range(warped_image.shape[1]):
             if y < panorama.shape[0] and x < panorama.shape[1]:
-                warped_pixel = warped_image[y+offset_y,x+offset_x]
+                warped_pixel = warped_image[y+offset_y,x+offset_x] 
                 if not np.equal(warped_pixel, np.array([0,0,0])).all():
                     # need to blend
-                    # print(warped_pixel)
                     if np.equal(panorama[y,x], np.array([0,0,0])).all():
                         panorama_pixel = np.zeros_like(warped_pixel)
                     else:
-                        warped_pixel = warped_pixel.astype(np.uint32) * WARPED_WEIGHT
-                        panorama_pixel = panorama[y,x].astype(np.uint32) * PANORAMA_WEIGHT
+                        warped_pixel = warped_pixel.astype(np.float32) * WARPED_WEIGHT
+                        panorama_pixel = panorama[y,x].astype(np.float32) * PANORAMA_WEIGHT
                     new_pixel = np.add(warped_pixel, panorama_pixel).astype('uint8')
                 else:
                     new_pixel = panorama[y,x]
@@ -543,63 +560,64 @@ def main():
     homography_pairs = [] # indices in the images_RGB matrix
     matched = []
     idx = 0
-
     while len(matched) != len(images_RGB)-1: 
         # find feature matches
         current_feature_dict = feature_dict_list[idx]
-        pair_ratio_list = []
 
         largest_ratio = 0
         largest_index = -1 
+        largest_inliers = None
         # search all other non-matched indices
         for jdx in range(len(feature_dict_list)):
             if jdx in matched or jdx == idx:
                 continue
             potential_feature_match = feature_dict_list[jdx]
             # determine if they are above a certain threshold from featuring matching
-            match_dict = feature_matcher(current_feature_dict, potential_feature_match)
-            
-            pair_ratio = len(match_dict) / min(len(current_feature_dict), len(potential_feature_match))
-            print(f"pair_ratio for images [{image_names[idx]}, {image_names[jdx]}] is ({round(pair_ratio,3)})")
-            pair_ratio_list.append(pair_ratio)
+            match_dict = feature_matcher(potential_feature_match, current_feature_dict)
+            # if len(match_dict) / min(len(potential_feature_match)):
+            #     pass
+            inliers, homography = RANSAC(match_dict)
+            pair_ratio = len(inliers)/min(len(potential_feature_match), len(current_feature_dict))
+            print(f"[{image_names[idx]}]: Found {len(inliers)} good matches from {len(match_dict)} total ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
+            print(f"[{image_names[idx]}, {image_names[jdx]}]: pair_ratio is ({round(pair_ratio,3)})")
             # if they are: compute RANSAC and get H matrix.
             if pair_ratio > largest_ratio: # 
                 largest_ratio = pair_ratio
                 largest_index = jdx
+                largest_inliers = inliers
         print(f"Largest Ratio for {idx} is {largest_ratio} with image {largest_index}")
-        if largest_ratio > 0.12:
-            match_dict = feature_matcher(feature_dict_list[largest_index], current_feature_dict)
-            inliers, homography = RANSAC(match_dict)
-            print(f"[{image_names[idx]}] Found {len(inliers)} good matches from {len(match_dict)} total ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
-
-            homography_list.append(homography)
+        if largest_ratio > 0.05:
+            H_refined = refine_RANSAC(largest_inliers)
+            homography_list.append(H_refined)
             homography_pairs.append((idx, largest_index))
             matched.append(idx)
             idx = largest_index
         else: # we have found a dead-end
             break
-     
-        # print(f"pair_ratio_list: {pair_ratio_list}")
-        # match_ratio = max(pair_ratio_list) / min(pair_ratio_list)
-        # print(f"Match Ratio: {match_ratio}")
-    print(f"homography_pairs {np.add(homography_pairs,1)}")
 
+
+# [[ 9.50826495e-01  2.84111668e-02 -2.02485311e+02]
+#  [ 1.30886887e-03  1.03198727e+00  2.15544771e+02]
+#  [-4.88491860e-05  1.12970956e-04  1.00000000e+00]]
+
+# [[ 9.54506587e-01  1.50102869e-02 -2.00174183e+02]
+#  [ 3.66353748e-02  1.02384684e+00  2.05275068e+02]
+#  [ 6.23390534e-06  3.90242540e-05  1.00000000e+00]]
+     
+    print(f"homography_pairs {np.add(homography_pairs,1)}")
+    
     panorama = images_RGB[homography_pairs[0][0]]
     final_H = np.eye(3)
     for pair, next_H in zip(homography_pairs, homography_list):
         final_H = np.matmul(next_H, final_H)
-        # for H_idx in range(1, len(homography_list)+1):
-        #     H_list = homography_list[0:H_idx]
-        #     final_H = H_list[0]
-        #     for H in H_list[1:]:
-        #         final_H = np.matmul(final_H, H)
         panorama = warp_and_stitch(final_H, images_RGB[pair[1]], panorama)
 
        
     Pano_path = OutputPath+"Panoramas/"
     if not os.path.isdir(Pano_path):
         os.mkdir(Pano_path)
-    cv2.imwrite(Pano_path+"TestSet3.jpg",panorama)
+
+    cv2.imwrite(Pano_path +ImagePath.split("/")[-2] +".jpg",panorama)
     # exit(1)
             # try and find next matching pair from remaining images
          # if no image in set matches, reject all non-matched images
