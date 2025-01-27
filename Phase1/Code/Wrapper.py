@@ -36,6 +36,7 @@ N_MAX = 200 # from 100
 TAU = 5e4 # from 1e4
 INLIER_PERCENT_THRESHOLD = 0.75 # from 0.9
 DISTANCE_RATIO_MAX = 0.7 # from 0.7
+MATCH_COUNT_THRESHOLD = 5
 PANORAMA_WEIGHT = 0.8
 WARPED_WEIGHT = 1.0 - PANORAMA_WEIGHT
 
@@ -132,6 +133,18 @@ def write_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path):
 
     write_images(im_list, [anms_out_path + "anms" +
                  name for name in image_names])
+    
+def get_anms_images(ANMS_scores, images_RGB, image_names, anms_out_path):
+    im_list = []
+    for coords_list, image in zip(ANMS_scores, images_RGB):
+        im_copy = copy.deepcopy(image)
+        im_mask = np.zeros((im_copy.shape[0], im_copy.shape[1]))
+        for coords in coords_list:
+            im_mask[coords.y, coords.x] = 1
+        im_mask = cv2.dilate(im_mask, kernel=cv2.getStructuringElement(cv2.MORPH_RECT, ksize=(5,5)))
+        im_copy[im_mask > 0] = [0, 0, 255]
+        im_list.append(im_copy)
+    return im_list
 
 
 def grayscale_normalize(image: np.matrix) -> np.matrix:
@@ -273,6 +286,23 @@ def write_matches(image1: np.ndarray, image2: np.ndarray, matches_dict: dict, ma
     cv2.imwrite(match_outpath+name1_header + "and" +
                 name2_header + ".jpg", concat_image)
 
+def get_matches_image(image1: np.ndarray, image2: np.ndarray, matches_dict: dict, match_outpath, image_pair_names):
+    concat_image = cv2.hconcat([image1, image2])
+    if DEBUG_LEVEL == 1:
+        cv2.imshow('image', concat_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    for point1, point2 in matches_dict.items():
+        cv2.circle(concat_image, (point1.x, point1.y), 1, (0, 0, 255), 2)
+        cv2.circle(
+            concat_image, (point2.x+image1.shape[1], point2.y), 1, (255, 0, 0), 2)
+        cv2.line(concat_image, (point1.x, point1.y),
+                 (point2.x+image1.shape[1], point2.y), (0, 255, 255), 1)
+
+    name1_header = image_pair_names[0].split(".")[0]
+    name2_header = image_pair_names[1].split(".")[0]
+    return concat_image
+
 def generate_random_homography(matches_dict: dict):
     key_list = list(matches_dict.keys())
     points_1 = random.sample(key_list, k=4)
@@ -305,11 +335,24 @@ def compute_point_ssd(point1: Point, point2: Point, H: np.ndarray) -> float:
     point1_p_mat = np.matmul(H, point1_mat)
     return np.sum(np.square((point2_mat-point1_p_mat)))
 
+# In some test cases, we noticed that points that have a ton of potential matches can ruin
+# the inlier pool. Since these are obviously outliers (a point can only have one match), we
+# manually remove these outliers before running RANSAC.
+def remove_obvious_outliers(matches_dict: dict):
+    output = {}
+    for key, value in matches_dict.items():
+        count = 0
+        count = sum(x == value for x in matches_dict.values())
+        if count >= MATCH_COUNT_THRESHOLD:
+            continue
+        output[key] = value
+    return output
 
 def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
     best_inlier_percent = 0.0
     best_homography = np.eye(3)
     best_inlier_dict = dict()
+    matches_dict = remove_obvious_outliers(matches_dict)
     for _ in range(n_max):
         H = generate_random_homography(matches_dict)
         inliers = dict()
@@ -442,7 +485,7 @@ def main():
     Parser = argparse.ArgumentParser()
     Parser.add_argument('--NumFeatures', default=100,
                         help='Number of best features to extract from each image, Default:100')
-    Parser.add_argument('--ImagePath', default='Phase1/Data/Test/TestSet2/',
+    Parser.add_argument('--ImagePath', default='Phase1/Data/Test/TestSet3/',
                         help='Relative path to set of images you want to stitch together. Default:Phase1/Data/Train/Set1/')
     Parser.add_argument('--OutputPath', default='Phase1/Outputs/',
                         help='Output directory for all Phase 1 images. Default:Phase1/Outputs/')
@@ -458,18 +501,15 @@ def main():
     Read a set of images for Panorama stitching
     """
     images_RGB, image_names = load_images(ImagePath, cv2.IMREAD_COLOR)
+    print(image_names)
 
     if not os.path.isdir(OutputPath):
         os.mkdir(OutputPath)
 
     homography_stack = []
     for idx in range(1, len(images_RGB)):
-        image = images_RGB[idx-1]
-        panorama = images_RGB[idx]
-        
-        # cv2.imshow("images", cv2.hconcat([image, panorama]))
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
+        image = images_RGB[idx]
+        panorama = images_RGB[idx-1]
         
         image_name = image_names.pop(0)
         image_to_greyscale = copy.deepcopy(image)
@@ -487,23 +527,40 @@ def main():
         image_anms = ANMS(corner_response_image, NUM_BEST_CORNERS, image_name, count)
         pano_anms = ANMS(corner_response_pano, NUM_BEST_CORNERS, "pano.jpg", count_pano)
 
-        write_anms_images([image_anms, pano_anms], [image, panorama], ["image.jpg", "pano.jpg"], OutputPath+"anms/")
+        anms_images = get_anms_images([image_anms, pano_anms], [image, panorama], ["image.jpg", "pano.jpg"], OutputPath+"anms/")
+        
 
         image_feature_dict = feature_descriptor(image_anms, greyscaled_image)
         pano_feature_dict = feature_descriptor(pano_anms, greyscaled_pano)
 
         match_dict = feature_matcher(image_feature_dict, pano_feature_dict)
 
-        write_matches(image, panorama, match_dict,
-                  OutputPath + "Match/match", (image_name, "pano.jpg"))
+        match_image = get_matches_image(image, panorama, match_dict,
+                  OutputPath + "Match/match", ("image.jpg", "pano.jpg"))
 
         inliers, homography = RANSAC(match_dict)
         print(f"[{image_name}] Found {len(inliers)} good matches ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
 
-        write_matches(image, panorama, inliers,
-                  OutputPath + "Match/RANSAC", (image_name, "pano.jpg"))
+        ransac_image = get_matches_image(image, panorama, inliers,
+                  OutputPath + "Match/RANSAC", ("image.jpg", "pano.jpg"))
+        
 
-        # panorama = warp_and_stitch(homography, image, panorama)
+        cv2.imshow("raw images", cv2.hconcat([image, panorama]))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
+        cv2.imshow("anms", cv2.hconcat(anms_images))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
+        cv2.imshow("Feature Matches", match_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
+        cv2.imshow("After RANSAC", ransac_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        panorama = warp_and_stitch(homography, image, panorama)
         homography_stack.append(homography)
         print()
         
