@@ -28,23 +28,23 @@ import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
 from Wrapper_Utilities import Point, Bounding_Box
 
-CORNER_SCORE_THRESHOLD = 0.01
-REGION_MAX_KERNEL = 5
+CORNER_SCORE_THRESHOLD = 0.1 # from 0.01
+REGION_MAX_KERNEL = 3
 CORNER_HARRIS_K = 0.04
 NUM_BEST_CORNERS = 250 # from 500
 N_MAX = 200 # from 100
-TAU = 1e4 # from 1e4
+TAU = 5e4 # from 1e4
 INLIER_PERCENT_THRESHOLD = 0.75 # from 0.9
 DISTANCE_RATIO_MAX = 0.7 # from 0.7
-PANORAMA_WEIGHT = 0.5
-WARPED_WEIGHT = 0.5
+PANORAMA_WEIGHT = 1.0
+WARPED_WEIGHT = 0.0
 
 DEBUG_LEVEL = 0
 
 
 # TODO 
 
-# Make fnding matches less sensitive
+# Make finding matches less sensitive
 
 # Make main loop more robust to bad matches
 #   It can be the case that the current panorama cannot currently stitch with selected RBG image, if so, we need to try the other images first, and revisit it afterwards
@@ -52,8 +52,6 @@ DEBUG_LEVEL = 0
 # Occasionally the pano doesnt contain the third image (probably due to a bad H matrix creation). debug this...
 
 # Redo or modify blurring process, output is not suitable when H is not a good fit.
-
-# Test whether refined H_matrix  is benefitting or harming us.
 
 # Figure out Occasional Failure on Line 92
 
@@ -73,11 +71,12 @@ def region_maxima(image: np.ndarray, kernel_size: int) -> np.ndarray:
                 output[row+i, col+j] = 1
     return output
 
-def ANMS(corner_response, num_best_corners) -> list[tuple[int, int]]:
+def ANMS(corner_response, num_best_corners, image_name: str, count) -> list[tuple[int, int]]:
     # Gets the regional maximums and their coordinates
     n_best = []
     output_mask = region_maxima(corner_response, REGION_MAX_KERNEL)
     local_maxima = np.argwhere(output_mask)
+    print(f"[{image_name}]: Region_maxima reduced responses from {count} to {len(local_maxima)}")
     r = {}
     for i in local_maxima:
         pixel_coord = Point(tuple(i))
@@ -92,9 +91,8 @@ def ANMS(corner_response, num_best_corners) -> list[tuple[int, int]]:
     list.reverse()
     inf_removed = [x for x in list if x[1] != np.inf]
     n_best = []
-    # for loop could be replaced by slice ':' operator
-    # this fails with index out of range error. Probably if len(inf_removed) < num_best_corners
-    for i in range(num_best_corners):
+    # this fails with index out of bounds error. Probably if len(inf_removed) < num_best_corners
+    for i in range(min(num_best_corners,len(inf_removed))):
         n_best.append(inf_removed[i][0])
     return n_best
 
@@ -162,6 +160,12 @@ def write_feature_images(feature_dict: dict[tuple[int, int]], image_name, featur
     FD_image = np.vstack(FD_image)
     cv2.imwrite(feature_outpath + image_name, FD_image)
     return
+
+
+def write_corner_images(corner_responses, images, image_names, corner_out_path):
+    corner_images = corner_viewer(corner_responses, images)
+    write_images(corner_images, [corner_out_path + "corner" +
+                 name for name in image_names])
 
 
 def corner_viewer(corner_responses: Union[list[cv2.Mat], cv2.Mat], images_RGB: Union[list[np.ndarray], np.ndarray]) -> Union[list[np.ndarray], np.ndarray]:
@@ -327,10 +331,10 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
         verbose = 2
     else:
         verbose = 0
-    refined_homography_result = least_squares(homography_error_function, best_homography.flatten(), args=[
-                                              best_inlier_dict], loss='cauchy', verbose=verbose)
+    # refined_homography_result = least_squares(homography_error_function, best_homography.flatten(), args=[
+    #                                           best_inlier_dict], loss='cauchy', verbose=verbose)
 
-    return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
+    # return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
     return best_inlier_dict, best_homography
 
 
@@ -469,25 +473,27 @@ def main():
             greyscaled_image, image_name)
         corner_response_pano, count_pano = generate_corner_response(
             greyscaled_pano, "Pano")
+        
+        write_corner_images([corner_response_image, corner_response_pano], [image, panorama], [image_name, "panp.jpg"], OutputPath+"Corners/")
 
-        image_anms = ANMS(corner_response_image, NUM_BEST_CORNERS)
-        pano_anms = ANMS(corner_response_pano, NUM_BEST_CORNERS)
+        image_anms = ANMS(corner_response_image, NUM_BEST_CORNERS, image_name, count)
+        pano_anms = ANMS(corner_response_pano, NUM_BEST_CORNERS, "pano.jpg", count_pano)
 
-        # write_anms_images([image_anms, pano_anms], [image, panorama], ["image.jpg", "pano.jpg"], OutputPath+"anms/")
+        write_anms_images([image_anms, pano_anms], [image, panorama], [image_name, "pano.jpg"], OutputPath+"anms/")
 
         image_feature_dict = feature_descriptor(image_anms, greyscaled_image)
         pano_feature_dict = feature_descriptor(pano_anms, greyscaled_pano)
 
         match_dict = feature_matcher(image_feature_dict, pano_feature_dict)
 
-        # write_matches(image, panorama, match_dict,
-        #           OutputPath + "Match/match", ("image.jpg", "pano.jpg"))
+        write_matches(image, panorama, match_dict,
+                  OutputPath + "Match/match", (image_name, "pano.jpg"))
 
         inliers, homography = RANSAC(match_dict)
         print(f"[{image_name}] Found {len(inliers)} good matches ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
 
-        # write_matches(image, panorama, inliers,
-        #           OutputPath + "Match/RANSAC", ("image.jpg", "pano.jpg"))
+        write_matches(image, panorama, inliers,
+                  OutputPath + "Match/RANSAC", (image_name, "pano.jpg"))
 
         panorama = warp_and_stitch(homography, image, panorama)
 
