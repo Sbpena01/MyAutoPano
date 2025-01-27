@@ -31,8 +31,8 @@ from Wrapper_Utilities import Point, Bounding_Box
 CORNER_SCORE_THRESHOLD = 0.05 # from 0.01
 REGION_MAX_KERNEL = 3
 CORNER_HARRIS_K = 0.04
-NUM_BEST_CORNERS = 250 # from 500
-N_MAX = 500 # from 100
+NUM_BEST_CORNERS = 500 # from 500
+N_MAX = 1000 # from 100
 TAU = 1e4 # from 1e4
 INLIER_PERCENT_THRESHOLD = 0.75 # from 0.9
 DISTANCE_RATIO_MAX = 0.7 # from 0.7
@@ -40,24 +40,23 @@ MATCH_COUNT_THRESHOLD = 5
 DISTANCE_RATIO_MAX = 0.5 # from 0.7
 PANORAMA_WEIGHT = 0.8
 WARPED_WEIGHT = 1.0 - PANORAMA_WEIGHT
+MAX_CORNER_THRESH = 3000
 
 DEBUG_LEVEL = 0
 
 
 # TODO 
 
+# decrease raw number of points...
+
 # Make finding matches less sensitive
+
+
 
 # Make main loop more robust to bad matches
 #   It can be the case that the current panorama cannot currently stitch with selected RBG image, if so, we need to try the other images first, and revisit it afterwards
 
-# Occasionally the pano doesnt contain the third image (probably due to a bad H matrix creation). debug this...
-
 # Redo or modify blurring process, output is not suitable when H is not a good fit.
-
-# Figure out Occasional Failure on Line 92
-
-
 # returns a mask with same size as image
 def region_maxima(image: np.ndarray, kernel_size: int) -> np.ndarray:
     if kernel_size % 2 == 0:
@@ -204,11 +203,19 @@ def generate_corner_response(images_gray: np.ndarray, image_name: str) -> tuple[
     
     mean = np.mean(response)
     std = np.std(response)
-    threshold = 1 * std + mean
-    # threshold = response.max() * CORNER_SCORE_THRESHOLD
+    std_mult =  1.5
+    threshold = std_mult * std + mean
     corner_image_mask = response > threshold
     count = np.sum(corner_image_mask)
+    # print(f"[{image_name}]: Found {count} corners({round(100*count/(images_gray.shape[0]*images_gray.shape[1]), 3)} %)")
+    while count > MAX_CORNER_THRESH:
+        std_mult += 0.5
+        threshold = std_mult * std + mean
+        corner_image_mask = response > threshold
+        count = np.sum(corner_image_mask)
     print(f"[{image_name}]: Found {count} corners({round(100*count/(images_gray.shape[0]*images_gray.shape[1]), 3)} %)")
+
+    # print(f"[{image_name}]: Found {count} corners({round(100*count/(images_gray.shape[0]*images_gray.shape[1]), 3)} %)")
     if DEBUG_LEVEL > 0:
         plt.hist(response.flatten(), bins=1000)
         plt.axvline(x=threshold, color='red', linestyle='--',
@@ -481,9 +488,9 @@ def warp_and_stitch(homography, image, panorama):
                 else:
                     new_pixel = panorama[y,x]
                 warped_image[y+offset_y,x+offset_x] = new_pixel
-    cv2.imshow('pano', warped_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # cv2.imshow('pano', warped_image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
     return warped_image
 
 
@@ -492,8 +499,8 @@ def main():
     Parser = argparse.ArgumentParser()
     Parser.add_argument('--NumFeatures', default=100,
                         help='Number of best features to extract from each image, Default:100')
-    Parser.add_argument('--ImagePath', default='Phase1/Data/Train/Set1/',
-                        help='Relative path to set of images you want to stitch together. Default:Phase1/Data/Train/Set1/')
+    Parser.add_argument('--ImagePath', default='Phase1/Data/Test/TestSet1/',
+                        help='Relative path to set of images you want to stitch together. Default:Phase1/Data/Test/Set1/')
     Parser.add_argument('--OutputPath', default='Phase1/Outputs/',
                         help='Output directory for all Phase 1 images. Default:Phase1/Outputs/')
     Parser.add_argument('--DebugLevel', type=int, default=0,
@@ -508,85 +515,169 @@ def main():
     Read a set of images for Panorama stitching
     """
     images_RGB, image_names = load_images(ImagePath, cv2.IMREAD_COLOR)
-    print(image_names)
-
     if not os.path.isdir(OutputPath):
         os.mkdir(OutputPath)
 
-    homography_stack = []
-    for idx in range(1, len(images_RGB)):
-        image = images_RGB[idx]
-        panorama = images_RGB[idx-1]
+    grayscaled_list = []
+    corner_response_list = []
+    anms_list = []
+    count_list = []
+    feature_dict_list = []
+    
+    for image, image_name in zip(images_RGB, image_names):
+        # image_name = image_names.pop(0)
+        grayscaled_image = cv2.cvtColor(copy.deepcopy(image), cv2.COLOR_BGR2GRAY)
+        grayscaled_list.append(grayscaled_image)
         
-        image_name = image_names.pop(0)
-        image_to_greyscale = copy.deepcopy(image)
-        greyscaled_image = cv2.cvtColor(image_to_greyscale, cv2.COLOR_BGR2GRAY)
-        pano_to_greyscale = copy.deepcopy(panorama)
-        greyscaled_pano = cv2.cvtColor(pano_to_greyscale, cv2.COLOR_BGR2GRAY)
-
-        corner_response_image, count = generate_corner_response(
-            greyscaled_image, image_name)
-        corner_response_pano, count_pano = generate_corner_response(
-            greyscaled_pano, "Pano")
+        corner_response_image, count = generate_corner_response(grayscaled_image, image_name)
+        corner_response_list.append(corner_response_image)
+        count_list.append(count_list)
         
-        write_corner_images([corner_response_image, corner_response_pano], [image, panorama], [image_name, "pano.jpg"], OutputPath+"Corners/")
-
         image_anms = ANMS(corner_response_image, NUM_BEST_CORNERS, image_name, count)
-        pano_anms = ANMS(corner_response_pano, NUM_BEST_CORNERS, "pano.jpg", count_pano)
-
-        anms_images = get_anms_images([image_anms, pano_anms], [image, panorama], ["image.jpg", "pano.jpg"], OutputPath+"anms/")
+        anms_list.append(image_anms)
         
+        image_feature_dict = feature_descriptor(image_anms, grayscaled_image)
+        feature_dict_list.append(image_feature_dict)
 
-        image_feature_dict = feature_descriptor(image_anms, greyscaled_image)
-        pano_feature_dict = feature_descriptor(pano_anms, greyscaled_pano)
+    homography_list = []
+    homography_pairs = [] # indices in the images_RGB matrix
+    matched = []
+    idx = 0
 
-        match_dict = feature_matcher(image_feature_dict, pano_feature_dict)
+    while len(matched) != len(images_RGB)-1: 
+        # find feature matches
+        current_feature_dict = feature_dict_list[idx]
+        pair_ratio_list = []
 
-        match_image = get_matches_image(image, panorama, match_dict,
-                  OutputPath + "Match/match", ("image.jpg", "pano.jpg"))
+        largest_ratio = 0
+        largest_index = -1 
+        # search all other non-matched indices
+        for jdx in range(len(feature_dict_list)):
+            if jdx in matched or jdx == idx:
+                continue
+            potential_feature_match = feature_dict_list[jdx]
+            # determine if they are above a certain threshold from featuring matching
+            match_dict = feature_matcher(current_feature_dict, potential_feature_match)
+            
+            pair_ratio = len(match_dict) / min(len(current_feature_dict), len(potential_feature_match))
+            print(f"pair_ratio for images [{image_names[idx]}, {image_names[jdx]}] is ({round(pair_ratio,3)})")
+            pair_ratio_list.append(pair_ratio)
+            # if they are: compute RANSAC and get H matrix.
+            if pair_ratio > largest_ratio: # 
+                largest_ratio = pair_ratio
+                largest_index = jdx
+        print(f"Largest Ratio for {idx} is {largest_ratio} with image {largest_index}")
+        if largest_ratio > 0.12:
+            match_dict = feature_matcher(feature_dict_list[largest_index], current_feature_dict)
+            inliers, homography = RANSAC(match_dict)
+            print(f"[{image_names[idx]}] Found {len(inliers)} good matches from {len(match_dict)} total ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
 
-        inliers, homography = RANSAC(match_dict)
-        print(f"[{image_name}] Found {len(inliers)} good matches from {len(match_dict)} total ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
+            homography_list.append(homography)
+            homography_pairs.append((idx, largest_index))
+            matched.append(idx)
+            idx = largest_index
+        else: # we have found a dead-end
+            break
+     
+        # print(f"pair_ratio_list: {pair_ratio_list}")
+        # match_ratio = max(pair_ratio_list) / min(pair_ratio_list)
+        # print(f"Match Ratio: {match_ratio}")
+    print(f"homography_pairs {np.add(homography_pairs,1)}")
 
-        ransac_image = get_matches_image(image, panorama, inliers,
-                  OutputPath + "Match/RANSAC", ("image.jpg", "pano.jpg"))
-        
+    panorama = images_RGB[homography_pairs[0][0]]
+    final_H = np.eye(3)
+    for pair, next_H in zip(homography_pairs, homography_list):
+        final_H = np.matmul(next_H, final_H)
+        # for H_idx in range(1, len(homography_list)+1):
+        #     H_list = homography_list[0:H_idx]
+        #     final_H = H_list[0]
+        #     for H in H_list[1:]:
+        #         final_H = np.matmul(final_H, H)
+        panorama = warp_and_stitch(final_H, images_RGB[pair[1]], panorama)
 
-        cv2.imshow("raw images", cv2.hconcat([image, panorama]))
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        
-        cv2.imshow("anms", cv2.hconcat(anms_images))
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        
-        cv2.imshow("Feature Matches", match_image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        
-        cv2.imshow("After RANSAC", ransac_image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        panorama = warp_and_stitch(homography, image, panorama)
-        homography_stack.append(homography)
-        print()
-        
-    print(f"Found {len(homography_stack)} homography matricies from {len(images_RGB)} images.")
-
-    image_idx = 1
-    panorama = images_RGB[0]
-    for H_idx in range(1, len(homography_stack)+1):
-        H_list = homography_stack[0:H_idx]
-        final_H = H_list[0]
-        for H in H_list[1:]:
-            final_H = np.matmul(final_H, H)
-        panorama = warp_and_stitch(final_H, images_RGB[image_idx], panorama)
-        image_idx += 1
-        
+       
     Pano_path = OutputPath+"Panoramas/"
     if not os.path.isdir(Pano_path):
         os.mkdir(Pano_path)
-    cv2.imwrite(Pano_path+"Set3.jpg",panorama)
+    cv2.imwrite(Pano_path+"TestSet3.jpg",panorama)
+    # exit(1)
+            # try and find next matching pair from remaining images
+         # if no image in set matches, reject all non-matched images
+        # if not found_match:
+        #     rejected.append(idx)
+        # if not, look at next images in set
+       
+        
+
+
+        # image = images_RGB[idx]
+        # panorama = images_RGB[idx-1]
+        
+        # image_name = image_names.pop(0)
+        # image_to_greyscale = copy.deepcopy(image)
+        # greyscaled_image = cv2.cvtColor(image_to_greyscale, cv2.COLOR_BGR2GRAY)
+        # pano_to_greyscale = copy.deepcopy(panorama)
+        # greyscaled_pano = cv2.cvtColor(pano_to_greyscale, cv2.COLOR_BGR2GRAY)
+
+        # corner_response_image, count = generate_corner_response(
+        #     greyscaled_image, image_name)
+        # corner_response_pano, count_pano = generate_corner_response(
+        #     greyscaled_pano, "Pano")
+        
+        # write_corner_images([corner_response_image, corner_response_pano], [image, panorama], [image_name, "pano.jpg"], OutputPath+"Corners/")
+
+        # image_anms = ANMS(corner_response_image, NUM_BEST_CORNERS, image_name, count)
+        # pano_anms = ANMS(corner_response_pano, NUM_BEST_CORNERS, "pano.jpg", count_pano)
+
+        # anms_images = get_anms_images([image_anms, pano_anms], [image, panorama], ["image.jpg", "pano.jpg"], OutputPath+"anms/")
+        
+
+        # image_feature_dict = feature_descriptor(image_anms, greyscaled_image)
+        # pano_feature_dict = feature_descriptor(pano_anms, greyscaled_pano)
+
+        # match_dict = feature_matcher(image_feature_dict, pano_feature_dict)
+
+        # match_image = get_matches_image(image, panorama, match_dict,
+        #           OutputPath + "Match/match", ("image.jpg", "pano.jpg"))
+
+        # inliers, homography = RANSAC(match_dict)
+        # print(f"[{image_name}] Found {len(inliers)} good matches from {len(match_dict)} total ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
+
+        # ransac_image = get_matches_image(image, panorama, inliers,
+        #           OutputPath + "Match/RANSAC", ("image.jpg", "pano.jpg"))
+        
+
+        # # cv2.imshow("raw images", cv2.hconcat([image, panorama]))
+        # # cv2.waitKey(0)
+        # # cv2.destroyAllWindows()
+        
+        # # cv2.imshow("anms", cv2.hconcat(anms_images))
+        # # cv2.waitKey(0)
+        # # cv2.destroyAllWindows()
+        
+        # # cv2.imshow("Feature Matches", match_image)
+        # # cv2.waitKey(0)
+        # # cv2.destroyAllWindows()
+        
+        # # cv2.imshow("After RANSAC", ransac_image)
+        # # cv2.waitKey(0)
+        # # cv2.destroyAllWindows()
+        # panorama = warp_and_stitch(homography, image, panorama)
+        # homography_stack.append(homography)
+        # print()
+        
+    # print(f"Found {len(homography_stack)} homography matricies from {len(images_RGB)} images.")
+
+    # image_idx = 1
+    # panorama = images_RGB[0]
+    # for H_idx in range(1, len(homography_stack)+1):
+    #     H_list = homography_stack[0:H_idx]
+    #     final_H = H_list[0]
+    #     for H in H_list[1:]:
+    #         final_H = np.matmul(final_H, H)
+    #     panorama = warp_and_stitch(final_H, images_RGB[image_idx], panorama)
+    #     image_idx += 1
+ 
 
 if __name__ == "__main__":
     main()
