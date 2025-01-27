@@ -28,14 +28,14 @@ import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
 from Wrapper_Utilities import Point, Bounding_Box
 
-CORNER_SCORE_THRESHOLD = 0.1 # from 0.01
+CORNER_SCORE_THRESHOLD = 0.05 # from 0.01
 REGION_MAX_KERNEL = 3
 CORNER_HARRIS_K = 0.04
 NUM_BEST_CORNERS = 250 # from 500
-N_MAX = 200 # from 100
-TAU = 5e4 # from 1e4
+N_MAX = 500 # from 100
+TAU = 1e4 # from 1e4
 INLIER_PERCENT_THRESHOLD = 0.75 # from 0.9
-DISTANCE_RATIO_MAX = 0.7 # from 0.7
+DISTANCE_RATIO_MAX = 0.5 # from 0.7
 PANORAMA_WEIGHT = 0.8
 WARPED_WEIGHT = 1.0 - PANORAMA_WEIGHT
 
@@ -187,7 +187,11 @@ def corner_viewer(corner_responses: Union[list[cv2.Mat], cv2.Mat], images_RGB: U
 def generate_corner_response(images_gray: np.ndarray, image_name: str) -> tuple[np.ndarray, int]:
     response = cv2.cornerHarris(
         src=images_gray, blockSize=2, ksize=3, k=CORNER_HARRIS_K)
-    threshold = CORNER_SCORE_THRESHOLD * response.max()
+    
+    mean = np.mean(response)
+    std = np.std(response)
+    threshold = 1 * std + mean
+    # threshold = response.max() * CORNER_SCORE_THRESHOLD
     corner_image_mask = response > threshold
     count = np.sum(corner_image_mask)
     print(f"[{image_name}]: Found {count} corners({round(100*count/(images_gray.shape[0]*images_gray.shape[1]), 3)} %)")
@@ -226,7 +230,7 @@ def feature_descriptor(best_corners: list[Point], original_image: np.ndarray):
         max_y = corner.y + 41
         sub_region = padded_image[min_y:max_y, min_x:max_x]
         blurred_region = cv2.GaussianBlur(
-            sub_region, ksize=(5, 5), sigmaX=1, sigmaY=1)
+            sub_region, ksize=(5, 5), sigmaX=1.5, sigmaY=1.5)
         sub_samble = get_subset(blurred_region, (8, 8))
         sub_sample_reshaped = np.reshape(sub_samble, -1)
         mean = np.mean(sub_sample_reshaped)
@@ -328,7 +332,7 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
             best_inlier_dict = inliers
             best_homography = H
 
-    print(best_homography)
+    # print(best_homography)
     if DEBUG_LEVEL > 0:
         verbose = 2
     else:
@@ -338,7 +342,6 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
 
     # return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
     return best_inlier_dict, best_homography
-
 
 def compute_homography(points_1, points_2):
     p1, p2, p3, p4 = points_1
@@ -364,7 +367,6 @@ def compute_homography(points_1, points_2):
     H = np.linalg.solve(P, b)
     H = np.reshape(H, (3, 3))
     return H
-
 
 def homography_error_function(h_guess, inliers_dict):
     h_guess = np.reshape(h_guess, (3, 3))
@@ -424,8 +426,12 @@ def warp_and_stitch(homography, image, panorama):
                 warped_pixel = warped_image[y+offset_y,x+offset_x]
                 if not np.equal(warped_pixel, np.array([0,0,0])).all():
                     # need to blend
-                    warped_pixel = warped_pixel.astype(np.uint32) * WARPED_WEIGHT
-                    panorama_pixel = panorama[y,x].astype(np.uint32) * PANORAMA_WEIGHT
+                    # print(warped_pixel)
+                    if np.equal(panorama[y,x], np.array([0,0,0])).all():
+                        panorama_pixel = np.zeros_like(warped_pixel)
+                    else:
+                        warped_pixel = warped_pixel.astype(np.uint32) * WARPED_WEIGHT
+                        panorama_pixel = panorama[y,x].astype(np.uint32) * PANORAMA_WEIGHT
                     new_pixel = np.add(warped_pixel, panorama_pixel).astype('uint8')
                 else:
                     new_pixel = panorama[y,x]
@@ -441,7 +447,7 @@ def main():
     Parser = argparse.ArgumentParser()
     Parser.add_argument('--NumFeatures', default=100,
                         help='Number of best features to extract from each image, Default:100')
-    Parser.add_argument('--ImagePath', default='Phase1/Data/Test/TestSet2/',
+    Parser.add_argument('--ImagePath', default='Phase1/Data/Train/Set1/',
                         help='Relative path to set of images you want to stitch together. Default:Phase1/Data/Train/Set1/')
     Parser.add_argument('--OutputPath', default='Phase1/Outputs/',
                         help='Output directory for all Phase 1 images. Default:Phase1/Outputs/')
@@ -463,12 +469,8 @@ def main():
 
     homography_stack = []
     for idx in range(1, len(images_RGB)):
-        image = images_RGB[idx-1]
-        panorama = images_RGB[idx]
-        
-        # cv2.imshow("images", cv2.hconcat([image, panorama]))
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
+        image = images_RGB[idx]
+        panorama = images_RGB[idx-1]
         
         image_name = image_names.pop(0)
         image_to_greyscale = copy.deepcopy(image)
@@ -481,7 +483,7 @@ def main():
         corner_response_pano, count_pano = generate_corner_response(
             greyscaled_pano, "Pano")
         
-        write_corner_images([corner_response_image, corner_response_pano], [image, panorama], [image_name, "panp.jpg"], OutputPath+"Corners/")
+        write_corner_images([corner_response_image, corner_response_pano], [image, panorama], [image_name, "pano.jpg"], OutputPath+"Corners/")
 
         image_anms = ANMS(corner_response_image, NUM_BEST_CORNERS, image_name, count)
         pano_anms = ANMS(corner_response_pano, NUM_BEST_CORNERS, "pano.jpg", count_pano)
@@ -497,7 +499,7 @@ def main():
                   OutputPath + "Match/match", (image_name, "pano.jpg"))
 
         inliers, homography = RANSAC(match_dict)
-        print(f"[{image_name}] Found {len(inliers)} good matches ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
+        print(f"[{image_name}] Found {len(inliers)} good matches from {len(match_dict)} total ({round(100*len(inliers)/(len(match_dict)), 3)} %) ")
 
         write_matches(image, panorama, inliers,
                   OutputPath + "Match/RANSAC", (image_name, "pano.jpg"))
