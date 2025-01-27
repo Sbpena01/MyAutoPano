@@ -36,8 +36,8 @@ N_MAX = 200 # from 100
 TAU = 5e4 # from 1e4
 INLIER_PERCENT_THRESHOLD = 0.75 # from 0.9
 DISTANCE_RATIO_MAX = 0.7 # from 0.7
-PANORAMA_WEIGHT = 1.0
-WARPED_WEIGHT = 0.0
+PANORAMA_WEIGHT = 0.8
+WARPED_WEIGHT = 1.0 - PANORAMA_WEIGHT
 
 DEBUG_LEVEL = 0
 
@@ -100,7 +100,9 @@ def ANMS(corner_response, num_best_corners, image_name: str, count) -> list[tupl
 def load_images(im_path: str, flags: int = cv2.IMREAD_GRAYSCALE) -> tuple[list[cv2.Mat], list[str]]:
     images = []
     image_names = []
-    for filename in os.listdir(im_path):
+    filenames = os.listdir(im_path)
+    filenames.sort(key=lambda x: int(x.split('.')[0]))  # Sort based on the number before the '.'
+    for filename in filenames:
         full_image_path = im_path+filename
         image = cv2.imread(full_image_path, flags=flags)
         image_names.append(filename)
@@ -335,6 +337,7 @@ def RANSAC(matches_dict: dict, n_max=N_MAX, tau=TAU):
     #                                           best_inlier_dict], loss='cauchy', verbose=verbose)
 
     # return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
+    # return best_inlier_dict, np.reshape(refined_homography_result.x, (3,3))
     return best_inlier_dict, best_homography
 
 
@@ -439,7 +442,7 @@ def main():
     Parser = argparse.ArgumentParser()
     Parser.add_argument('--NumFeatures', default=100,
                         help='Number of best features to extract from each image, Default:100')
-    Parser.add_argument('--ImagePath', default='Phase1/Data/Train/Set2/',
+    Parser.add_argument('--ImagePath', default='Phase1/Data/Test/TestSet2/',
                         help='Relative path to set of images you want to stitch together. Default:Phase1/Data/Train/Set1/')
     Parser.add_argument('--OutputPath', default='Phase1/Outputs/',
                         help='Output directory for all Phase 1 images. Default:Phase1/Outputs/')
@@ -459,10 +462,15 @@ def main():
     if not os.path.isdir(OutputPath):
         os.mkdir(OutputPath)
 
-    panorama = images_RGB.pop(0)
-    image_names.pop(0)
-    for image in images_RGB:
-
+    homography_stack = []
+    for idx in range(1, len(images_RGB)):
+        image = images_RGB[idx-1]
+        panorama = images_RGB[idx]
+        
+        # cv2.imshow("images", cv2.hconcat([image, panorama]))
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        
         image_name = image_names.pop(0)
         image_to_greyscale = copy.deepcopy(image)
         greyscaled_image = cv2.cvtColor(image_to_greyscale, cv2.COLOR_BGR2GRAY)
@@ -479,7 +487,7 @@ def main():
         image_anms = ANMS(corner_response_image, NUM_BEST_CORNERS, image_name, count)
         pano_anms = ANMS(corner_response_pano, NUM_BEST_CORNERS, "pano.jpg", count_pano)
 
-        write_anms_images([image_anms, pano_anms], [image, panorama], [image_name, "pano.jpg"], OutputPath+"anms/")
+        write_anms_images([image_anms, pano_anms], [image, panorama], ["image.jpg", "pano.jpg"], OutputPath+"anms/")
 
         image_feature_dict = feature_descriptor(image_anms, greyscaled_image)
         pano_feature_dict = feature_descriptor(pano_anms, greyscaled_pano)
@@ -495,7 +503,22 @@ def main():
         write_matches(image, panorama, inliers,
                   OutputPath + "Match/RANSAC", (image_name, "pano.jpg"))
 
-        panorama = warp_and_stitch(homography, image, panorama)
+        # panorama = warp_and_stitch(homography, image, panorama)
+        homography_stack.append(homography)
+        print()
+        
+    print(f"Found {len(homography_stack)} homography matricies from {len(images_RGB)} images.")
+
+    image_idx = 1
+    panorama = images_RGB[0]
+    for H_idx in range(1, len(homography_stack)+1):
+        H_list = homography_stack[0:H_idx]
+        final_H = H_list[0]
+        for H in H_list[1:]:
+            final_H = np.matmul(final_H, H)
+        panorama = warp_and_stitch(final_H, images_RGB[image_idx], panorama)
+        image_idx += 1
+        
 
     Pano_path = OutputPath+"Panoramas/"
     if not os.path.isdir(Pano_path):
