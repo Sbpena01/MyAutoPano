@@ -35,9 +35,8 @@ NUM_BEST_CORNERS = 500 # from 500
 N_MAX = 1000 # from 100
 TAU = 1e4 # from 1e4
 INLIER_PERCENT_THRESHOLD = 0.75 # from 0.9
-DISTANCE_RATIO_MAX = 0.8 # from 0.7
+DISTANCE_RATIO_MAX = 0.7 # from 0.7
 MATCH_COUNT_THRESHOLD = 15 # from 5
-DISTANCE_RATIO_MAX = 0.5 # from 0.7
 PANORAMA_WEIGHT = 0.8
 WARPED_WEIGHT = 1.0 - PANORAMA_WEIGHT
 MAX_CORNER_THRESH = 6000
@@ -489,7 +488,6 @@ def warp_and_stitch(homography, image, panorama):
     # X increases horizontal axis, Y increases vertical axis
     warped_image = cv2.warpPerspective(image, M=H_offset, dsize=dsize)
     print(warped_image.shape)
-    # cv2.imshow('warped_alone', warped_image)
     for y in range(warped_image.shape[0]):
         for x in range(warped_image.shape[1]):
             if y < panorama.shape[0] and x < panorama.shape[1]:
@@ -586,7 +584,7 @@ def main():
                 largest_index = jdx
                 largest_inliers = inliers
         print(f"Largest Ratio for {idx} is {largest_ratio} with image {largest_index}")
-        if largest_ratio > 0.05:
+        if largest_ratio > 0.055:
             H_refined = refine_RANSAC(largest_inliers)
             homography_list.append(H_refined)
             homography_pairs.append((idx, largest_index))
@@ -605,7 +603,7 @@ def main():
 #  [ 6.23390534e-06  3.90242540e-05  1.00000000e+00]]
      
     print(f"homography_pairs {np.add(homography_pairs,1)}")
-    
+
     panorama = images_RGB[homography_pairs[0][0]]
     final_H = np.eye(3)
     for pair, next_H in zip(homography_pairs, homography_list):
