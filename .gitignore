@@ -3,3 +3,4 @@ Phase2/Data
 Phase1/Outputs
 .venv/
 __pycache__/
+.DS_Store
