@@ -4,6 +4,7 @@ import os
 import numpy as np
 import random
 from Utilities import Point, Bounding_Box 
+import copy
 
 DEBUG_LEVEL = 0
 PAIR_COUNT = 0
@@ -52,6 +53,38 @@ def perterbate_patch(bounding_box: Bounding_Box) -> Bounding_Box:
     if new_bb == bounding_box:
         new_bb = perterbate_patch(bounding_box)
     return new_bb
+
+def warp_bb(bounding_box: Bounding_Box, homography):
+    warp_array = np.array([
+        [bounding_box.tl.x, bounding_box.tl.y, 1],
+        [bounding_box.tr.x, bounding_box.tr.y, 1],
+        [bounding_box.bl.x, bounding_box.bl.y, 1],
+        [bounding_box.br.x, bounding_box.br.y, 1]
+    ])
+
+    warp_array = np.dot(homography, warp_array.T)
+
+    warp_array /= warp_array[2]
+
+
+    return Bounding_Box(Point((warp_array[1][0], warp_array[0][0])), Point((warp_array[1][1], warp_array[0][1])),
+                        Point((warp_array[1][2], warp_array[0][2])), Point((warp_array[1][3], warp_array[0][3])))
+
+def display_bounding_boxes(name:str, image:np.ndarray, bounding_boxes: list[Bounding_Box]):
+    # tl to tr, tr to br, br to bl, bl to tl
+
+    imcopy = copy.deepcopy(image)
+    cv2.line(imcopy, bounding_boxes[0].tl.to_xy_tuple(), bounding_boxes[0].tr.to_xy_tuple(), (0, 0, 255), 2)
+    cv2.line(imcopy, bounding_boxes[0].tr.to_xy_tuple(), bounding_boxes[0].br.to_xy_tuple(), (0, 0, 255), 2)
+    cv2.line(imcopy, bounding_boxes[0].br.to_xy_tuple(), bounding_boxes[0].bl.to_xy_tuple(), (0, 0, 255), 2)
+    cv2.line(imcopy, bounding_boxes[0].bl.to_xy_tuple(), bounding_boxes[0].tl.to_xy_tuple(), (0, 0, 255), 2)
+
+    cv2.line(imcopy, bounding_boxes[1].tl.to_xy_tuple(), bounding_boxes[1].tr.to_xy_tuple(), (255, 0, 0), 2)
+    cv2.line(imcopy, bounding_boxes[1].tr.to_xy_tuple(), bounding_boxes[1].br.to_xy_tuple(), (255, 0, 0), 2)
+    cv2.line(imcopy, bounding_boxes[1].br.to_xy_tuple(), bounding_boxes[1].bl.to_xy_tuple(), (255, 0, 0), 2)
+    cv2.line(imcopy, bounding_boxes[1].bl.to_xy_tuple(), bounding_boxes[1].tl.to_xy_tuple(), (255, 0, 0), 2)
+    cv2.imshow(name, imcopy)
+
 
 def main():
     Parser = argparse.ArgumentParser()
@@ -119,6 +152,8 @@ def main():
     """ Randomly translate each corner on sub patch (P_b)"""
     warped_bb = perterbate_patch(unwarped_bb)
     print(f"warped bb {warped_bb}")
+
+    display_bounding_boxes('unwarped_annotated', test_image, [unwarped_bb, warped_bb])
      
     homography = cv2.getPerspectiveTransform(unwarped_bb.get_points_np(), warped_bb.get_points_np())
     homography_inv = np.linalg.inv(homography)
@@ -168,9 +203,11 @@ def main():
     warped_patch = warped_image[(unwarped_bb.tl.y+offset_y):(unwarped_bb.bl.y+offset_y),
                                  (unwarped_bb.tl.x+offset_x):(unwarped_bb.br.x+offset_x)]
 
-    cv2.imshow('warped image', warped_image)
+    # cv2.imshow('warped image', warped_image)
     cv2.imshow('warped patch', warped_patch)
     cv2.imshow('unwarped patch', unwarped_patch)
+    display_bounding_boxes('warped_annotated', warped_image, [warp_bb(unwarped_bb, H_offset), warp_bb(warped_bb, H_offset)])
+
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

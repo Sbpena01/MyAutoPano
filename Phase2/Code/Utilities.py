@@ -10,6 +10,9 @@ class Point:
 
     def __eq__(self, other: "Point"):
         return (self.x == other.x) and (self.y == other.y)
+    
+    def to_xy_tuple(self) -> tuple[int, int]:
+        return (self.x, self.y)
 
 class Bounding_Box:
     def __init__(self, tl: Point, tr:Point, bl:Point, br:Point):
