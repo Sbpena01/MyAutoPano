@@ -85,7 +85,11 @@ def display_bounding_boxes(name:str, image:np.ndarray, bounding_boxes: list[Boun
     cv2.line(imcopy, bounding_boxes[1].bl.to_xy_tuple(), bounding_boxes[1].tl.to_xy_tuple(), (255, 0, 0), 2)
     cv2.imshow(name, imcopy)
 
-
+def export_data(image_patch: np.ndarray, H_4pt, idx):
+    image_patch = image_patch.flatten()
+    np.savetxt(f'Phase2/Data/Data_Generation/Patch_Stacks/patch_stack_{idx}.csv', image_patch)
+    np.savetxt(f'Phase2/Data/Data_Generation/Homographies/homography_{idx}.csv', H_4pt, delimiter=',')
+    
 def main():
     Parser = argparse.ArgumentParser()
     """
@@ -137,86 +141,86 @@ def main():
 
     """ Generate a sub patch within bounds [(x_min,y_min), (x_man, y_max)] (P_a) """
     
-    test_image = image_set[0]
-    test_name = image_names[0]
+    image = image_set[0]
+    name = image_names[0]
+    for image, name in zip(image_set, image_names):
+        print(f"Loading Image: {name.replace('.jpg','')} out of {NumImages}")
+        unwarped_bb = generate_patch(image)
+        unwarped_patch = image[unwarped_bb.tl.y:unwarped_bb.bl.y, unwarped_bb.tl.x:unwarped_bb.br.x]
+        # print(f"unwarped bb {unwarped_bb}\n")
+        # cv2.imshow('original image', image)
+        # cv2.imshow('unwarped_patch', unwarped_patch)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+
+        """ Randomly translate each corner on sub patch (P_b)"""
+        warped_bb = perterbate_patch(unwarped_bb)
+        # print(f"warped bb {warped_bb}")
+
+        display_bounding_boxes('unwarped_annotated', image, [unwarped_bb, warped_bb])
+        
+        
+        """ Use Inverse of H (H^b_a) to transform image and generate warped Subpatch """
+        homography = cv2.getPerspectiveTransform(unwarped_bb.get_points_np(), warped_bb.get_points_np())
+        homography_inv = np.linalg.inv(homography)
 
 
-    unwarped_bb = generate_patch(test_image)
-    unwarped_patch = test_image[unwarped_bb.tl.y:unwarped_bb.bl.y, unwarped_bb.tl.x:unwarped_bb.br.x]
-    print(f"unwarped bb {unwarped_bb}\n")
-    # cv2.imshow('original image', test_image)
-    # cv2.imshow('unwarped_patch', unwarped_patch)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+        # print(homography_inv)
+        corners = np.array([
+                    [0, 0],
+                    [0, image.shape[0]],
+                    [image.shape[1], 0],
+                    [image.shape[1], image.shape[0]]
+                ], dtype=np.float32)
 
-    """ Randomly translate each corner on sub patch (P_b)"""
-    warped_bb = perterbate_patch(unwarped_bb)
-    print(f"warped bb {warped_bb}")
+        # Convert corners to homogeneous coordinates
+        corners = np.column_stack((corners, np.ones(corners.shape[0])))
 
-    display_bounding_boxes('unwarped_annotated', test_image, [unwarped_bb, warped_bb])
-     
-    homography = cv2.getPerspectiveTransform(unwarped_bb.get_points_np(), warped_bb.get_points_np())
-    homography_inv = np.linalg.inv(homography)
+        # Apply the homography matrix
+        transformed_corners = np.dot(homography_inv, corners.T) 
 
+        # Normalize the points to convert back from homogeneous coordinates
+        transformed_corners /= transformed_corners[2]
 
-    print(homography_inv)
-    corners = np.array([
-                [0, 0],
-                [0, test_image.shape[0]],
-                [test_image.shape[1], 0],
-                [test_image.shape[1], test_image.shape[0]]
-            ], dtype=np.float32)
+        # Extract x and y coordinates
+        x_coords = transformed_corners[0]
+        y_coords = transformed_corners[1]
 
-    # Convert corners to homogeneous coordinates
-    corners = np.column_stack((corners, np.ones(corners.shape[0])))
+        x_min, x_max = int(np.min(x_coords)), int(np.max(x_coords))
+        y_min, y_max = int(np.min(y_coords)), int(np.max(y_coords))
 
-    # Apply the homography matrix
-    transformed_corners = np.dot(homography_inv, corners.T) 
+        width = max(x_max, image.shape[1]) - min(0, x_min)
+        height = max(y_max,image.shape[0]) - min(0, y_min)
+        dsize = (width, height)
 
-    # Normalize the points to convert back from homogeneous coordinates
-    transformed_corners /= transformed_corners[2]
+        offset_x = -x_min if x_min < 0 else 0
+        offset_y = -y_min if y_min < 0 else 0
 
-    # Extract x and y coordinates
-    x_coords = transformed_corners[0]
-    y_coords = transformed_corners[1]
+        offset_matrix = np.array([
+            [1, 0, offset_x],
+            [0, 1, offset_y],
+            [0, 0, 1]
+        ], dtype=np.float64)
 
-    x_min, x_max = int(np.min(x_coords)), int(np.max(x_coords))
-    y_min, y_max = int(np.min(y_coords)), int(np.max(y_coords))
+        # Update the homography
+        H_offset = np.dot(offset_matrix, homography_inv)
 
-    width = max(x_max, test_image.shape[1]) - min(0, x_min)
-    height = max(y_max,test_image.shape[0]) - min(0, y_min)
-    dsize = (width, height)
+        warped_image = cv2.warpPerspective(image, M=H_offset, dsize=dsize)
+        warped_patch = warped_image[(unwarped_bb.tl.y+offset_y):(unwarped_bb.bl.y+offset_y),
+                                    (unwarped_bb.tl.x+offset_x):(unwarped_bb.br.x+offset_x)]
 
-    offset_x = -x_min if x_min < 0 else 0
-    offset_y = -y_min if y_min < 0 else 0
+        # cv2.imshow('warped image', warped_image)
+        # cv2.imshow('warped patch', warped_patch)
+        # cv2.imshow('unwarped patch', unwarped_patch)
+        # display_bounding_boxes('warped_annotated', warped_image, [warp_bb(unwarped_bb, H_offset), warp_bb(warped_bb, H_offset)])
 
-    offset_matrix = np.array([
-        [1, 0, offset_x],
-        [0, 1, offset_y],
-        [0, 0, 1]
-    ], dtype=np.float64)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
-    # Update the homography
-    H_offset = np.dot(offset_matrix, homography_inv)
-
-    warped_image = cv2.warpPerspective(test_image, M=H_offset, dsize=dsize)
-    warped_patch = warped_image[(unwarped_bb.tl.y+offset_y):(unwarped_bb.bl.y+offset_y),
-                                 (unwarped_bb.tl.x+offset_x):(unwarped_bb.br.x+offset_x)]
-
-    # cv2.imshow('warped image', warped_image)
-    cv2.imshow('warped patch', warped_patch)
-    cv2.imshow('unwarped patch', unwarped_patch)
-    display_bounding_boxes('warped_annotated', warped_image, [warp_bb(unwarped_bb, H_offset), warp_bb(warped_bb, H_offset)])
-
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-
-
-    """ Use Inverse of H (H^b_a) to transform image and generate warped Subpatch """
-
-    """" Stack image frames (data_out) to a file, and generate corresponding label H_4pt """
-
+        """" Stack image frames (data_out) to a file, and generate corresponding label H_4pt """
+        patch_stack = np.concatenate((unwarped_patch, warped_patch), axis=2)
+        H_4pt = warped_bb.get_points_np() - unwarped_bb.get_points_np()
+        export_data(patch_stack, H_4pt, name)
     return
 
 
