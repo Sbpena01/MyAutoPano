@@ -21,7 +21,7 @@ import kornia  # You can use this to get the transform and warp in this project
 sys.dont_write_bytecode = True
 
 
-def LossFn(delta, img_a, patch_b, corners):
+def LossFn(predicted_H_4pt: np.ndarray, ground_truth_H_4pt: np.ndarray):
     ###############################################
     # Fill your loss function of choice here!
     ###############################################
@@ -30,8 +30,9 @@ def LossFn(delta, img_a, patch_b, corners):
     # You can use kornia to get the transform and warp in this project
     # Bonus if you implement it yourself
     ###############################################
-    loss = ...
-    return loss
+    diff = predicted_H_4pt - ground_truth_H_4pt
+    loss = np.linalg.norm(diff) # aparently this is the l2 norm # TODO: verify
+    return loss * 0.5
 
 
 class HomographyModel(pl.LightningModule):
@@ -71,7 +72,7 @@ class Net(nn.Module):
         """
         super().__init__()
         #############################
-        # Fill your network initialization of choice here!
+        # TODO: Fill your network initialization of choice here!
         #############################
         ...
         #############################

@@ -1,4 +1,41 @@
 import numpy as np
+import pandas as pd
+
+def read_data(idx) -> tuple[np.ndarray, np.ndarray]:
+    patches = pd.read_csv(f"Phase2/Data/Data_Generation/Patch_Stacks/patch_stack_{idx}.csv", header=None)
+    patches = patches.to_numpy(dtype=np.uint8)
+    patches = np.reshape(patches, (101,101,6))
+    homography = pd.read_csv(f"Phase2/Data/Data_Generation/Homographies/homography_{idx}.csv", header=None)
+    homography = homography.to_numpy(dtype=np.uint8)
+    return patches, homography
+
+
+# def compute_homography(points_1, points_2):
+#     p1, p2, p3, p4 = points_1
+#     p1_p, p2_p, p3_p, p4_p = points_2
+    
+#     # set up PH matrix
+#     P = np.array([
+#         [-p1[1], -p1[0], -1, 0, 0, 0, p1[1]*p1_p[1], p1[0]*p1_p[1], p1_p[1]],
+#         [0, 0, 0, -p1[1], -p1[0], -1, p1[1]*p1_p[0], p1[0]*p1_p[0], p1_p[0]],
+#         [-p2[1], -p2[0], -1, 0, 0, 0, p2[1]*p2_p[1], p2[0]*p2_p[1], p2_p[1]],
+#         [0, 0, 0, -p2[1], -p2[0], -1, p2[1]*p2_p[0], p2[0]*p2_p[0], p2_p[0]],
+#         [-p3[1], -p3[0], -1, 0, 0, 0, p3[1]*p3_p[1], p3[0]*p3_p[1], p3_p[1]],
+#         [0, 0, 0, -p3[1], -p3[0], -1, p3[1]*p3_p[0], p3[0]*p3_p[0], p3_p[0]],
+#         [-p4[1], -p4[0], -1, 0, 0, 0, p4[1]*p4_p[1], p4[0]*p4_p[1], p4_p[1]],
+#         [0, 0, 0, -p4[1], -p4[0], -1, p4[1]*p4_p[0], p4[0]*p4_p[0], p4_p[0]],
+#         [0, 0, 0, 0, 0, 0, 0, 0, 1],
+#     ])
+
+#     b = np.zeros((9,1))
+#     b[8,0] = 1
+#     if np.linalg.det(P) == 0:  # Matrix is singular
+#         return None
+#     H = np.linalg.solve(P,b)
+#     H = np.reshape(H, (3,3))
+#     return H
+
+
 class Point:
     def __init__(self, point: tuple):
         self.x = int(point[1])

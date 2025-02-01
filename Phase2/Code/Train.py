@@ -22,8 +22,8 @@ import torch
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
-from torch.optim import AdamW
-from Network.Network import HomographyModel
+from torch.optim import AdamW, SGD
+from Network.Network import HomographyModel, LossFn
 import cv2
 import sys
 import os
@@ -47,6 +47,7 @@ import string
 from termcolor import colored, cprint
 import math as m
 from tqdm import tqdm
+import Utilities
 
 
 def GenerateBatch(BasePath, DirNamesTrain, TrainCoordinates, ImageSize, MiniBatchSize):
@@ -70,19 +71,20 @@ def GenerateBatch(BasePath, DirNamesTrain, TrainCoordinates, ImageSize, MiniBatc
     while ImageNum < MiniBatchSize:
         # Generate random image
         RandIdx = random.randint(0, len(DirNamesTrain) - 1)
+        image, label = Utilities.read_data(RandIdx)
 
-        RandImageName = BasePath + os.sep + DirNamesTrain[RandIdx] + ".jpg"
+        # RandImageName = BasePath + os.sep + DirNamesTrain[RandIdx] + ".jpg"
         ImageNum += 1
 
-        ##########################################################
-        # Add any standardization or data augmentation here!
-        ##########################################################
-        I1 = np.float32(cv2.imread(RandImageName))
-        Coordinates = TrainCoordinates[RandIdx]
+        # ##########################################################
+        # # Add any standardization or data augmentation here!
+        # ##########################################################
+        # I1 = np.float32(cv2.imread(RandImageName))
+        # Coordinates = TrainCoordinates[RandIdx]
 
-        # Append All Images and Mask
-        I1Batch.append(torch.from_numpy(I1))
-        CoordinatesBatch.append(torch.tensor(Coordinates))
+        # # Append All Images and Mask
+        I1Batch.append(torch.from_numpy(image))
+        CoordinatesBatch.append(torch.tensor(label))
 
     return torch.stack(I1Batch), torch.stack(CoordinatesBatch)
 
@@ -139,7 +141,7 @@ def TrainOperation(
     ###############################################
     # Fill your optimizer of choice here!
     ###############################################
-    Optimizer = ...
+    Optimizer = SGD(lr=0.005, momentum=0.9)
 
     # Tensorboard
     # Create a summary to monitor loss tensor
