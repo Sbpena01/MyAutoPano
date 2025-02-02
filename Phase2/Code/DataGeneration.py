@@ -9,6 +9,8 @@ import copy
 DEBUG_LEVEL = 0
 PAIR_COUNT = 0
 PERTURBATION_RANGE = 10
+THRESHMAX = 10
+
 def load_images(im_path: str, num_images: int, flags: int = cv2.IMREAD_GRAYSCALE) -> tuple[list[cv2.Mat], list[str]]:
     images = []
     image_names = []
@@ -25,7 +27,7 @@ def load_images(im_path: str, num_images: int, flags: int = cv2.IMREAD_GRAYSCALE
             break
     return images, image_names
 
-def generate_patch(image: np.ndarray, patch_size = 101):
+def generate_patch(image: np.ndarray, patch_size = 128):
     # We generate a random patch by randomly selecting a point to act at the top left corner of
     # patch. We first calculate the active region based on the perturbation range and the
     # patch size.
@@ -123,7 +125,7 @@ def main():
     Parser.add_argument(
         "--NumImages",
         type=int,
-        default=20,
+        default=-1,
         help="Increase debug verbosity with higher debug level"
     )
 
@@ -137,7 +139,7 @@ def main():
     
 
     """ Read a set of images from input directory """
-    image_set, image_names = load_images(ImagePath, NumImages, cv2.IMREAD_ANYCOLOR)
+    image_set, image_names = load_images(ImagePath, NumImages, cv2.IMREAD_COLOR_RGB)
 
     """ Generate a sub patch within bounds [(x_min,y_min), (x_man, y_max)] (P_a) """
     
@@ -146,8 +148,9 @@ def main():
     idx = 1
 
     for image, name in zip(image_set, image_names):
-        for i in range(PATCH_COUNT):
-            print(f"Generating Patch {i} from Image: {name.replace('.jpg','')} out of {NumImages}")
+        print(f"Generating Patches from Image: {name.replace('.jpg','')} out of {NumImages}")
+        i = 0
+        while i < PATCH_COUNT:
             unwarped_bb = generate_patch(image)
             unwarped_patch = image[unwarped_bb.tl.y:unwarped_bb.bl.y, unwarped_bb.tl.x:unwarped_bb.br.x]
             # print(f"unwarped bb {unwarped_bb}\n")
@@ -196,6 +199,11 @@ def main():
             height = max(y_max,image.shape[0]) - min(0, y_min)
             dsize = (width, height)
 
+            if dsize[0] > image.shape[0] * THRESHMAX or dsize[1] > image.shape[1] * THRESHMAX:
+                print(f"ERROR: dsize too large ;), dsize:{dsize}")
+                i -=1
+                continue
+
             offset_x = -x_min if x_min < 0 else 0
             offset_y = -y_min if y_min < 0 else 0
 
@@ -207,6 +215,7 @@ def main():
 
             # Update the homography
             H_offset = np.dot(offset_matrix, homography_inv)
+
 
             warped_image = cv2.warpPerspective(image, M=H_offset, dsize=dsize)
             warped_patch = warped_image[(unwarped_bb.tl.y+offset_y):(unwarped_bb.bl.y+offset_y),
@@ -225,6 +234,7 @@ def main():
             H_4pt = warped_bb.get_points_np() - unwarped_bb.get_points_np()
             export_data(patch_stack, H_4pt, OutputPath, idx)
             idx += 1
+            i += 1
     return
 
 

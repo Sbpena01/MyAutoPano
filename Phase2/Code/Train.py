@@ -69,7 +69,7 @@ def GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize):
     ImageNum = 0
     while ImageNum < MiniBatchSize:
         # Generate random image
-        RandIdx = random.randint(0, NUM_DATA)
+        RandIdx = random.randint(1, NUM_DATA)
         image, label = read_data(BasePath+DirNamesTrain, RandIdx)
         ImageNum += 1
 
@@ -81,6 +81,17 @@ def GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize):
         I1Batch.append(torch.from_numpy(image))
         labels.append(torch.tensor(label))
 
+    return torch.stack(I1Batch), torch.stack(labels)
+
+def Generate_Val_Batch(BasePath, DirNamesVal, NumValSamples):
+    I1Batch = []
+    labels = []
+
+    for ImageNum in range(1,NumValSamples):
+        image, label = read_data(BasePath+DirNamesVal, ImageNum)
+        I1Batch.append(torch.from_numpy(image))
+        labels.append(torch.tensor(label))
+        
     return torch.stack(I1Batch), torch.stack(labels)
 
 
@@ -100,6 +111,7 @@ def TrainOperation(
     DirNamesTrain,
     DirNamesVal,
     NumTrainSamples,
+    NumValSamples,
     NumEpochs,
     MiniBatchSize,
     SaveCheckPoint,
@@ -139,22 +151,32 @@ def TrainOperation(
 
     # Tensorboard
     # Create a summary to monitor loss tensor
-    Writer = SummaryWriter(LogsPath)
+    # Writer = SummaryWriter(LogsPath)
 
-    if LatestFile is not None:
-        CheckPoint = torch.load(CheckPointPath + LatestFile + ".ckpt")
-        # Extract only numbers from the name
-        StartEpoch = int("".join(c for c in LatestFile.split("a")[0] if c.isdigit()))
-        model.load_state_dict(CheckPoint["model_state_dict"])
-        print("Loaded latest checkpoint with the name " + LatestFile + "....")
-    else:
-        StartEpoch = 0
-        print("New model initialized....")
+
+    mps = torch.device("mps")
+
+    # if LatestFile is not None:
+    #     CheckPoint = torch.load(CheckPointPath + LatestFile + ".ckpt")
+    #     # Extract only numbers from the name
+    #     StartEpoch = int("".join(c for c in LatestFile.split("a")[0] if c.isdigit()))
+    #     model.load_state_dict(CheckPoint["model_state_dict"])
+    #     print("Loaded latest checkpoint with the name " + LatestFile + "....")
+    # else:
+    #     StartEpoch = 0
+    #     print("New model initialized....")
+
+    StartEpoch = 0
+    # model.to(mps)
 
     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
         NumIterationsPerEpoch = int(NumTrainSamples / MiniBatchSize / DivTrain)
+        epoch_loss = 0
         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
             I1Batch, labels = GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize)
+
+            # I1Batch.to(mps)
+            # labels.to(mps)
 
             # Predict output with forward pass
             PredicatedCoordinatesBatch = model(I1Batch)
@@ -163,6 +185,7 @@ def TrainOperation(
             Optimizer.zero_grad()
             LossThisBatch.backward()
             Optimizer.step()
+            epoch_loss += LossThisBatch
 
             # Save checkpoint every some SaveCheckPoint's iterations
             if PerEpochCounter % SaveCheckPoint == 0:
@@ -186,16 +209,26 @@ def TrainOperation(
                 )
                 print("\n" + SaveName + " Model Saved...")
 
-            result = model.validation_step(GenerateBatch(BasePath, DirNamesVal, MiniBatchSize))
+            # result = model.validation_step(GenerateBatch(BasePath, DirNamesVal, MiniBatchSize))
+            
             # Tensorboard
-            Writer.add_scalar(
-                "LossEveryIter",
-                result["val_loss"],
-                Epochs * NumIterationsPerEpoch + PerEpochCounter,
-            )
+            # Writer.add_scalar(
+            #     "LossEveryIter",
+            #     result["val_loss"],
+            #     Epochs * NumIterationsPerEpoch + PerEpochCounter,
+            # )
             # If you don't flush the tensorboard doesn't update until a lot of iterations!
-            Writer.flush()
+            # Writer.flush()
+        
 
+        with torch.no_grad():
+            val_ims, val_labels = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
+            # val_ims.to(mps)
+            # val_labels.to(mps)
+            result = model.validation_step((val_ims, val_labels))
+        
+        print(f"Validation Loss: {result["val_loss"]}, Training Loss: {epoch_loss}")
+        
         # Save model every epoch
         SaveName = CheckPointPath + str(Epochs) + "model.ckpt"
         torch.save(
@@ -250,8 +283,8 @@ def main():
     Parser.add_argument(
         "--MiniBatchSize",
         type=int,
-        default=1,
-        help="Size of the MiniBatch to use, Default:1",
+        default=512,
+        help="Size of the MiniBatch to use, Default:32",
     )
     Parser.add_argument(
         "--LoadCheckPoint",
@@ -287,7 +320,14 @@ def main():
     #     NumClasses,
     # ) = SetupAll(BasePath, CheckPointPath)
 
-    NumTrainSamples = NUM_DATA
+    
+
+    NumTrainSamples = next(os.walk(BasePath+"Train/Homographies"))[2]
+    NumTrainSamples = len(NumTrainSamples)
+
+    NumValSamples = next(os.walk(BasePath+"Val/Homographies"))[2] #directory is your directory path as string
+    NumValSamples = int(len(NumValSamples) * 0.1)
+    
     SaveCheckPoint = 100
 
     # Find Latest Checkpoint File
@@ -303,6 +343,7 @@ def main():
         DirNamesTrain,
         DirNamesVal,
         NumTrainSamples,
+        NumValSamples,
         NumEpochs,
         MiniBatchSize,
         SaveCheckPoint,

@@ -6,10 +6,11 @@ NUM_DATA = 100
 
 def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
     patches = pd.read_csv(f"{path}Patch_Stacks/patch_stack_{idx}.csv", header=None)
-    patches = patches.to_numpy(dtype=np.uint8)
-    patches = np.reshape(patches, (101,101,6))
+    patches = patches.to_numpy(dtype=np.float32)
+    patches = np.reshape(patches, (128,128,6))
+    patches = np.transpose(patches, axes=(2,0,1))
     homography = pd.read_csv(f"{path}Homographies/homography_{idx}.csv", header=None)
-    homography = homography.to_numpy(dtype=np.uint8)
+    homography = homography.to_numpy(dtype=np.float32)
     return patches, homography
 
 

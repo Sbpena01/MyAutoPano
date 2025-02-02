@@ -21,9 +21,10 @@ import pytorch_lightning as pl
 sys.dont_write_bytecode = True
 
 
-def LossFn(predicted_H_4pt: np.ndarray, ground_truth_H_4pt: np.ndarray):
+def LossFn(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
+    ground_truth_H_4pt = torch.reshape(ground_truth_H_4pt, predicted_H_4pt.shape)
     diff = predicted_H_4pt - ground_truth_H_4pt
-    loss = np.linalg.norm(diff)
+    loss = torch.norm(diff)
     return loss * 0.5
 
 
@@ -56,35 +57,35 @@ class Net(nn.Module):
         OutputSize - Size of the Output
         """
         super().__init__()
-        self.conv1 = nn.Conv2d(6, 64, kernel_size=(3,3), stride=1)
+        self.conv1 = nn.Conv2d(6, 64, kernel_size=(3,3), padding=1, stride=1)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=(3,3), stride=1)
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=(3,3), padding=1, stride=1)
         self.bn2 = nn.BatchNorm2d(64)
         self.relu2 = nn.ReLU()
         self.mp1 = nn.MaxPool2d(kernel_size=(2,2), stride=2)
 
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=(3,3), stride=1)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=(3,3), padding=1, stride=1)
         self.bn3 = nn.BatchNorm2d(64)
         self.relu3 = nn.ReLU()
-        self.conv4 = nn.Conv2d(64, 64, kernel_size=(3,3), stride=1)
+        self.conv4 = nn.Conv2d(64, 64, kernel_size=(3,3), padding=1, stride=1)
         self.bn4 = nn.BatchNorm2d(64)
         self.relu4 = nn.ReLU()
         self.mp2 = nn.MaxPool2d(kernel_size=(2,2), stride=2)
 
-        self.conv5 = nn.Conv2d(64, 128, kernel_size=(3,3), stride=1)
-        self.bn5 = nn.BatchNorm2d(64)
+        self.conv5 = nn.Conv2d(64, 128, kernel_size=(3,3), padding=1, stride=1)
+        self.bn5 = nn.BatchNorm2d(128)
         self.relu5 = nn.ReLU()
-        self.conv6 = nn.Conv2d(128, 128, kernel_size=(3,3), stride=1)
-        self.bn6 = nn.BatchNorm2d(64)
+        self.conv6 = nn.Conv2d(128, 128, kernel_size=(3,3), padding=1, stride=1)
+        self.bn6 = nn.BatchNorm2d(128)
         self.relu6 = nn.ReLU()
         self.mp3 = nn.MaxPool2d(kernel_size=(2,2), stride=2)
 
-        self.conv7 = nn.Conv2d(128, 128, kernel_size=(3,3), stride=1)
-        self.bn7 = nn.BatchNorm2d(64)
+        self.conv7 = nn.Conv2d(128, 128, kernel_size=(3,3), padding=1, stride=1)
+        self.bn7 = nn.BatchNorm2d(128)
         self.relu7 = nn.ReLU()
-        self.conv8 = nn.Conv2d(128, 128, kernel_size=(3,3), stride=1)
-        self.bn8 = nn.BatchNorm2d(64)
+        self.conv8 = nn.Conv2d(128, 128, kernel_size=(3,3), padding=1, stride=1)
+        self.bn8 = nn.BatchNorm2d(128)
         self.relu8 = nn.ReLU()
         
         self.flatten = nn.Flatten()
@@ -117,15 +118,8 @@ class Net(nn.Module):
         Outputs:
         out - output of the network
         """
-        # TODO: fix shape and try training
-        # TODO: Remake data with 128 shape
-        # TODO: fix datatypes...
-        print(x.shape)
-        x = self.conv1(x)
-        print(x.shape)
-        x = self.bn1(x)
-        print(x.shape)
-        x = self.relu1(x)
+
+        x = self.relu1(self.bn1(self.conv1(x)))
         x = self.relu2(self.bn2(self.conv2(x)))
         x = self.mp1(x)
 
@@ -135,11 +129,11 @@ class Net(nn.Module):
 
         x = self.relu5(self.bn5(self.conv5(x)))
         x = self.relu6(self.bn6(self.conv6(x)))
-        x = self.mp2(x)
+        x = self.mp3(x)
 
         x = self.relu7(self.bn7(self.conv7(x)))
         x = self.relu8(self.bn8(self.conv8(x)))
-        x = self.mp2(x)
+        
         x = self.flatten(x)
         x = self.dropout(x)
         x = self.relu9(self.fc1(x))
