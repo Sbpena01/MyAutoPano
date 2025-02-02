@@ -154,7 +154,7 @@ def TrainOperation(
     # Writer = SummaryWriter(LogsPath)
 
 
-    mps = torch.device("mps")
+    cuda = torch.device("cuda")
 
     # if LatestFile is not None:
     #     CheckPoint = torch.load(CheckPointPath + LatestFile + ".ckpt")
@@ -167,7 +167,7 @@ def TrainOperation(
     #     print("New model initialized....")
 
     StartEpoch = 0
-    # model.to(mps)
+    model.to(cuda)
 
     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
         NumIterationsPerEpoch = int(NumTrainSamples / MiniBatchSize / DivTrain)
@@ -175,8 +175,8 @@ def TrainOperation(
         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
             I1Batch, labels = GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize)
 
-            # I1Batch.to(mps)
-            # labels.to(mps)
+            I1Batch = I1Batch.to(cuda)
+            labels = labels.to(cuda)
 
             # Predict output with forward pass
             PredicatedCoordinatesBatch = model(I1Batch)
@@ -223,11 +223,11 @@ def TrainOperation(
 
         with torch.no_grad():
             val_ims, val_labels = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
-            # val_ims.to(mps)
-            # val_labels.to(mps)
+            val_ims = val_ims.to(cuda)
+            val_labels = val_labels.to(cuda)
             result = model.validation_step((val_ims, val_labels))
         
-        print(f"Validation Loss: {result["val_loss"]}, Training Loss: {epoch_loss}")
+        print(f"Validation Loss: {result['val_loss']}, Training Loss: {epoch_loss}")
         
         # Save model every epoch
         SaveName = CheckPointPath + str(Epochs) + "model.ckpt"
@@ -259,8 +259,8 @@ def main():
     )
     Parser.add_argument(
         "--CheckPointPath",
-        default="../Checkpoints/",
-        help="Path to save Checkpoints, Default: ../Checkpoints/",
+        default="Checkpoints/",
+        help="Path to save Checkpoints, Default: Checkpoints/",
     )
 
     Parser.add_argument(
@@ -283,7 +283,7 @@ def main():
     Parser.add_argument(
         "--MiniBatchSize",
         type=int,
-        default=512,
+        default=3,
         help="Size of the MiniBatch to use, Default:32",
     )
     Parser.add_argument(

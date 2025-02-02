@@ -5,3 +5,7 @@ Phase1/Outputs
 __pycache__/
 .DS_Store
 Logs/
+Phase2/Checkpoints/
+SLURM_OUTPUT/
+*.out
+
