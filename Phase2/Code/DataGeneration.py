@@ -85,10 +85,10 @@ def display_bounding_boxes(name:str, image:np.ndarray, bounding_boxes: list[Boun
     cv2.line(imcopy, bounding_boxes[1].bl.to_xy_tuple(), bounding_boxes[1].tl.to_xy_tuple(), (255, 0, 0), 2)
     cv2.imshow(name, imcopy)
 
-def export_data(image_patch: np.ndarray, H_4pt, idx):
+def export_data(image_patch: np.ndarray, H_4pt, outpath, idx):
     image_patch = image_patch.flatten()
-    np.savetxt(f'Phase2/Data/Data_Generation/Patch_Stacks/patch_stack_{idx}.csv', image_patch)
-    np.savetxt(f'Phase2/Data/Data_Generation/Homographies/homography_{idx}.csv', H_4pt, delimiter=',')
+    np.savetxt(f'{outpath}Patch_Stacks/patch_stack_{idx}.csv', image_patch)
+    np.savetxt(f'{outpath}Homographies/homography_{idx}.csv', H_4pt, delimiter=',')
     
 def main():
     Parser = argparse.ArgumentParser()
@@ -98,12 +98,12 @@ def main():
     Parser.add_argument(
         "--ImagePath",
         default="Phase2/Data/Train/",
-        help="Base path of images, Default: Phase2/Data/Train",
+        help="Base path of images, Default: Phase2/Data/Train/",
     )
     Parser.add_argument(
         "--OutputPath",
-        default="/Outputs/Data/", 
-        help="Base path of images, Default: /Outputs/Data",
+        default="Phase2/Data/Data_Generation/Train/", 
+        help="Base path of images, Default: Phase2/Data/Data_Generation/Train/",
     )
 
     Parser.add_argument(
@@ -223,7 +223,7 @@ def main():
             """" Stack image frames (data_out) to a file, and generate corresponding label H_4pt """
             patch_stack = np.concatenate((unwarped_patch, warped_patch), axis=2)
             H_4pt = warped_bb.get_points_np() - unwarped_bb.get_points_np()
-            export_data(patch_stack, H_4pt, idx)
+            export_data(patch_stack, H_4pt, OutputPath, idx)
             idx += 1
     return
 

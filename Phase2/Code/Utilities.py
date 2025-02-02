@@ -1,11 +1,14 @@
 import numpy as np
 import pandas as pd
 
-def read_data(idx) -> tuple[np.ndarray, np.ndarray]:
-    patches = pd.read_csv(f"Phase2/Data/Data_Generation/Patch_Stacks/patch_stack_{idx}.csv", header=None)
+
+NUM_DATA = 100
+
+def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
+    patches = pd.read_csv(f"{path}Patch_Stacks/patch_stack_{idx}.csv", header=None)
     patches = patches.to_numpy(dtype=np.uint8)
     patches = np.reshape(patches, (101,101,6))
-    homography = pd.read_csv(f"Phase2/Data/Data_Generation/Homographies/homography_{idx}.csv", header=None)
+    homography = pd.read_csv(f"{path}Homographies/homography_{idx}.csv", header=None)
     homography = homography.to_numpy(dtype=np.uint8)
     return patches, homography
 

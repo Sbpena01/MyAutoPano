@@ -19,9 +19,9 @@ Worcester Polytechnic Institute
 # termcolor, do (pip install termcolor)
 
 import torch
-import torchvision
+# import torchvision
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import datasets, transforms
+# from torchvision import datasets, transforms
 from torch.optim import AdamW, SGD
 from Network.Network import HomographyModel, LossFn
 import cv2
@@ -29,64 +29,59 @@ import sys
 import os
 import numpy as np
 import random
-import skimage
-import PIL
+# import skimage
+# import PIL
 import os
 import glob
 import random
-from skimage import data, exposure, img_as_float
-import matplotlib.pyplot as plt
+# from skimage import data, exposure, img_as_float
+# import matplotlib.pyplot as plt
 import numpy as np
 import time
 from Misc.MiscUtils import *
 from Misc.DataUtils import *
-from torchvision.transforms import ToTensor
+# from torchvision.transforms import ToTensor
 import argparse
 import shutil
 import string
-from termcolor import colored, cprint
+# from termcolor import colored, cprint
 import math as m
 from tqdm import tqdm
-import Utilities
+from Utilities import read_data, NUM_DATA 
 
 
-def GenerateBatch(BasePath, DirNamesTrain, TrainCoordinates, ImageSize, MiniBatchSize):
+def GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize):
     """
     Inputs:
     BasePath - Path to COCO folder without "/" at the end
     DirNamesTrain - Variable with Subfolder paths to train files
     NOTE that Train can be replaced by Val/Test for generating batch corresponding to validation (held-out testing in this case)/testing
-    TrainCoordinates - Coordinatess corresponding to Train
+    TrainCoordinates - Coordinates corresponding to Train
     NOTE that TrainCoordinates can be replaced by Val/TestCoordinatess for generating batch corresponding to validation (held-out testing in this case)/testing
-    ImageSize - Size of the Image
     MiniBatchSize is the size of the MiniBatch
     Outputs:
     I1Batch - Batch of images
-    CoordinatesBatch - Batch of coordinates
+    labels - Batch of coordinates
     """
     I1Batch = []
-    CoordinatesBatch = []
+    labels = []
 
     ImageNum = 0
     while ImageNum < MiniBatchSize:
         # Generate random image
-        RandIdx = random.randint(0, len(DirNamesTrain) - 1)
-        image, label = Utilities.read_data(RandIdx)
-
-        # RandImageName = BasePath + os.sep + DirNamesTrain[RandIdx] + ".jpg"
+        RandIdx = random.randint(0, NUM_DATA)
+        image, label = read_data(BasePath+DirNamesTrain, RandIdx)
         ImageNum += 1
 
         # ##########################################################
         # # Add any standardization or data augmentation here!
         # ##########################################################
-        # I1 = np.float32(cv2.imread(RandImageName))
-        # Coordinates = TrainCoordinates[RandIdx]
 
         # # Append All Images and Mask
         I1Batch.append(torch.from_numpy(image))
-        CoordinatesBatch.append(torch.tensor(label))
+        labels.append(torch.tensor(label))
 
-    return torch.stack(I1Batch), torch.stack(CoordinatesBatch)
+    return torch.stack(I1Batch), torch.stack(labels)
 
 
 def PrettyPrint(NumEpochs, DivTrain, MiniBatchSize, NumTrainSamples, LatestFile):
@@ -103,9 +98,8 @@ def PrettyPrint(NumEpochs, DivTrain, MiniBatchSize, NumTrainSamples, LatestFile)
 
 def TrainOperation(
     DirNamesTrain,
-    TrainCoordinates,
+    DirNamesVal,
     NumTrainSamples,
-    ImageSize,
     NumEpochs,
     MiniBatchSize,
     SaveCheckPoint,
@@ -141,7 +135,7 @@ def TrainOperation(
     ###############################################
     # Fill your optimizer of choice here!
     ###############################################
-    Optimizer = SGD(lr=0.005, momentum=0.9)
+    Optimizer = SGD(model.parameters(), lr=0.005, momentum=0.9)
 
     # Tensorboard
     # Create a summary to monitor loss tensor
@@ -160,13 +154,11 @@ def TrainOperation(
     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
         NumIterationsPerEpoch = int(NumTrainSamples / MiniBatchSize / DivTrain)
         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
-            I1Batch, CoordinatesBatch = GenerateBatch(
-                BasePath, DirNamesTrain, TrainCoordinates, ImageSize, MiniBatchSize
-            )
+            I1Batch, labels = GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize)
 
             # Predict output with forward pass
             PredicatedCoordinatesBatch = model(I1Batch)
-            LossThisBatch = LossFn(PredicatedCoordinatesBatch, CoordinatesBatch)
+            LossThisBatch = LossFn(PredicatedCoordinatesBatch, labels)
 
             Optimizer.zero_grad()
             LossThisBatch.backward()
@@ -194,7 +186,7 @@ def TrainOperation(
                 )
                 print("\n" + SaveName + " Model Saved...")
 
-            result = model.validation_step(Batch)
+            result = model.validation_step(GenerateBatch(BasePath, DirNamesVal, MiniBatchSize))
             # Tensorboard
             Writer.add_scalar(
                 "LossEveryIter",
@@ -229,8 +221,8 @@ def main():
     Parser = argparse.ArgumentParser()
     Parser.add_argument(
         "--BasePath",
-        default="/home/lening/workspace/rbe549/YourDirectoryID_p1/Phase2/Data",
-        help="Base path of images, Default:/home/lening/workspace/rbe549/YourDirectoryID_p1/Phase2/Data",
+        default="Phase2/Data/Data_Generation/",
+        help="Base path of images, Default:Phase2/Data/Data_Generation",
     )
     Parser.add_argument(
         "--CheckPointPath",
@@ -240,8 +232,8 @@ def main():
 
     Parser.add_argument(
         "--ModelType",
-        default="Unsup",
-        help="Model type, Supervised or Unsupervised? Choose from Sup and Unsup, Default:Unsup",
+        default="Sup",
+        help="Model type, Supervised or Unsupervised? Choose from Sup and Unsup, Default:Sup",
     )
     Parser.add_argument(
         "--NumEpochs",
@@ -282,16 +274,21 @@ def main():
     CheckPointPath = Args.CheckPointPath
     LogsPath = Args.LogsPath
     ModelType = Args.ModelType
+    DirNamesTrain = "Train/"
+    DirNamesVal = "Val/"
 
-    # Setup all needed parameters including file reading
-    (
-        DirNamesTrain,
-        SaveCheckPoint,
-        ImageSize,
-        NumTrainSamples,
-        TrainCoordinates,
-        NumClasses,
-    ) = SetupAll(BasePath, CheckPointPath)
+    # # Setup all needed parameters including file reading
+    # (
+    #     DirNamesTrain,
+    #     SaveCheckPoint,
+    #     ImageSize,
+    #     NumTrainSamples,
+    #     TrainCoordinates,
+    #     NumClasses,
+    # ) = SetupAll(BasePath, CheckPointPath)
+
+    NumTrainSamples = NUM_DATA
+    SaveCheckPoint = 100
 
     # Find Latest Checkpoint File
     if LoadCheckPoint == 1:
@@ -304,9 +301,8 @@ def main():
 
     TrainOperation(
         DirNamesTrain,
-        TrainCoordinates,
+        DirNamesVal,
         NumTrainSamples,
-        ImageSize,
         NumEpochs,
         MiniBatchSize,
         SaveCheckPoint,
@@ -315,7 +311,7 @@ def main():
         LatestFile,
         BasePath,
         LogsPath,
-        ModelType,
+        ModelType
     )
 
 

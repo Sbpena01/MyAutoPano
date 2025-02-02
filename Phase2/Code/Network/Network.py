@@ -15,46 +15,31 @@ import sys
 import torch
 import numpy as np
 import torch.nn.functional as F
-import kornia  # You can use this to get the transform and warp in this project
+import pytorch_lightning as pl
 
 # Don't generate pyc codes
 sys.dont_write_bytecode = True
 
 
 def LossFn(predicted_H_4pt: np.ndarray, ground_truth_H_4pt: np.ndarray):
-    ###############################################
-    # Fill your loss function of choice here!
-    ###############################################
-
-    ###############################################
-    # You can use kornia to get the transform and warp in this project
-    # Bonus if you implement it yourself
-    ###############################################
     diff = predicted_H_4pt - ground_truth_H_4pt
-    loss = np.linalg.norm(diff) # aparently this is the l2 norm # TODO: verify
+    loss = np.linalg.norm(diff)
     return loss * 0.5
 
 
 class HomographyModel(pl.LightningModule):
-    def __init__(self, hparams):
+    def __init__(self):
         super(HomographyModel, self).__init__()
-        self.hparams = hparams
+        # self.hparams = hparams
         self.model = Net()
 
-    def forward(self, a, b):
-        return self.model(a, b)
+    def forward(self, x):
+        return self.model(x)
 
-    def training_step(self, batch, batch_idx):
-        img_a, patch_a, patch_b, corners, gt = batch
-        delta = self.model(patch_a, patch_b)
-        loss = LossFn(delta, img_a, patch_b, corners)
-        logs = {"loss": loss}
-        return {"loss": loss, "log": logs}
-
-    def validation_step(self, batch, batch_idx):
-        img_a, patch_a, patch_b, corners, gt = batch
-        delta = self.model(patch_a, patch_b)
-        loss = LossFn(delta, img_a, patch_b, corners)
+    def validation_step(self, batch):
+        homographies, labels = batch
+        delta = self.model(homographies)
+        loss = LossFn(delta, labels)
         return {"val_loss": loss}
 
     def validation_epoch_end(self, outputs):
@@ -64,41 +49,49 @@ class HomographyModel(pl.LightningModule):
 
 
 class Net(nn.Module):
-    def __init__(self, InputSize, OutputSize):
+    def __init__(self):
         """
         Inputs:
         InputSize - Size of the Input
         OutputSize - Size of the Output
         """
         super().__init__()
-        #############################
-        # TODO: Fill your network initialization of choice here!
-        #############################
-        ...
-        #############################
-        # You will need to change the input size and output
-        # size for your Spatial transformer network layer!
-        #############################
-        # Spatial transformer localization-network
-        self.localization = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=7),
-            nn.MaxPool2d(2, stride=2),
-            nn.ReLU(True),
-            nn.Conv2d(8, 10, kernel_size=5),
-            nn.MaxPool2d(2, stride=2),
-            nn.ReLU(True),
-        )
+        self.conv1 = nn.Conv2d(6, 64, kernel_size=(3,3), stride=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu1 = nn.ReLU()
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=(3,3), stride=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.relu2 = nn.ReLU()
+        self.mp1 = nn.MaxPool2d(kernel_size=(2,2), stride=2)
 
-        # Regressor for the 3 * 2 affine matrix
-        self.fc_loc = nn.Sequential(
-            nn.Linear(10 * 3 * 3, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
-        )
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=(3,3), stride=1)
+        self.bn3 = nn.BatchNorm2d(64)
+        self.relu3 = nn.ReLU()
+        self.conv4 = nn.Conv2d(64, 64, kernel_size=(3,3), stride=1)
+        self.bn4 = nn.BatchNorm2d(64)
+        self.relu4 = nn.ReLU()
+        self.mp2 = nn.MaxPool2d(kernel_size=(2,2), stride=2)
 
-        # Initialize the weights/bias with identity transformation
-        self.fc_loc[2].weight.data.zero_()
-        self.fc_loc[2].bias.data.copy_(
-            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
-        )
+        self.conv5 = nn.Conv2d(64, 128, kernel_size=(3,3), stride=1)
+        self.bn5 = nn.BatchNorm2d(64)
+        self.relu5 = nn.ReLU()
+        self.conv6 = nn.Conv2d(128, 128, kernel_size=(3,3), stride=1)
+        self.bn6 = nn.BatchNorm2d(64)
+        self.relu6 = nn.ReLU()
+        self.mp3 = nn.MaxPool2d(kernel_size=(2,2), stride=2)
+
+        self.conv7 = nn.Conv2d(128, 128, kernel_size=(3,3), stride=1)
+        self.bn7 = nn.BatchNorm2d(64)
+        self.relu7 = nn.ReLU()
+        self.conv8 = nn.Conv2d(128, 128, kernel_size=(3,3), stride=1)
+        self.bn8 = nn.BatchNorm2d(64)
+        self.relu8 = nn.ReLU()
+        
+        self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout()
+        self.fc1 = nn.Linear(32768, 1024)
+        self.relu9 = nn.ReLU()
+        self.fc2 = nn.Linear(1024, 8)
 
     #############################
     # You will need to change the input size and output
@@ -116,7 +109,7 @@ class Net(nn.Module):
 
         return x
 
-    def forward(self, xa, xb):
+    def forward(self, x):
         """
         Input:
         xa is a MiniBatch of the image a
@@ -124,7 +117,31 @@ class Net(nn.Module):
         Outputs:
         out - output of the network
         """
-        #############################
-        # Fill your network structure of choice here!
-        #############################
-        return out
+        # TODO: fix shape and try training
+        # TODO: Remake data with 128 shape
+        # TODO: fix datatypes...
+        print(x.shape)
+        x = self.conv1(x)
+        print(x.shape)
+        x = self.bn1(x)
+        print(x.shape)
+        x = self.relu1(x)
+        x = self.relu2(self.bn2(self.conv2(x)))
+        x = self.mp1(x)
+
+        x = self.relu3(self.bn3(self.conv3(x)))
+        x = self.relu4(self.bn4(self.conv4(x)))
+        x = self.mp2(x)
+
+        x = self.relu5(self.bn5(self.conv5(x)))
+        x = self.relu6(self.bn6(self.conv6(x)))
+        x = self.mp2(x)
+
+        x = self.relu7(self.bn7(self.conv7(x)))
+        x = self.relu8(self.bn8(self.conv8(x)))
+        x = self.mp2(x)
+        x = self.flatten(x)
+        x = self.dropout(x)
+        x = self.relu9(self.fc1(x))
+        x = self.fc2(x)
+        return x

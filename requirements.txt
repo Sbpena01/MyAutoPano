@@ -1,0 +1,10 @@
+torch
+numpy
+pytorch_lightning
+tqdm
+opencv-python
+matplotlib
+scikit-learn
+tensorboard
+scikit-image
+pandas
