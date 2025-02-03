@@ -20,6 +20,7 @@ Worcester Polytechnic Institute
 
 import torch
 # import torchvision
+from torchvision.transforms import v2
 from torch.utils.tensorboard import SummaryWriter
 # from torchvision import datasets, transforms
 from torch.optim import AdamW, SGD
@@ -47,10 +48,10 @@ import string
 # from termcolor import colored, cprint
 import math as m
 from tqdm import tqdm
-from Utilities import read_data, NUM_DATA 
+from Utilities import read_data 
 
 
-def GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize):
+def GenerateBatch(BasePath, DirNamesTrain, DirSize):
     """
     Inputs:
     BasePath - Path to COCO folder without "/" at the end
@@ -66,20 +67,24 @@ def GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize):
     I1Batch = []
     labels = []
 
-    ImageNum = 0
-    while ImageNum < MiniBatchSize:
-        # Generate random image
-        RandIdx = random.randint(1, NUM_DATA)
-        image, label = read_data(BasePath+DirNamesTrain, RandIdx)
-        ImageNum += 1
+    # Generate random image
+    RandIdx = random.randint(1,DirSize)
+    # TODO: fix read_data to match size
+    image, label = read_data(BasePath+DirNamesTrain, RandIdx)
+    ImageNum += 1
 
-        # ##########################################################
-        # # Add any standardization or data augmentation here!
-        # ##########################################################
+    # ##########################################################
+    # # Add any standardization or data augmentation here!
+    # ##########################################################
+    # transforms = v2.Compose([
+    #     v2.GaussianBlur((3,3), sigma=1),
+    #     v2.ColorJitter()
+        
+    # ])
 
-        # # Append All Images and Mask
-        I1Batch.append(torch.from_numpy(image))
-        labels.append(torch.tensor(label))
+    # # Append All Images and Mask
+    I1Batch.append(torch.from_numpy(image))
+    labels.append(torch.tensor(label))
 
     return torch.stack(I1Batch), torch.stack(labels)
 
@@ -173,7 +178,7 @@ def TrainOperation(
         NumIterationsPerEpoch = int(NumTrainSamples / MiniBatchSize / DivTrain)
         epoch_loss = 0
         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
-            I1Batch, labels = GenerateBatch(BasePath, DirNamesTrain, MiniBatchSize)
+            I1Batch, labels = GenerateBatch(BasePath, DirNamesTrain, NumTrainSamples)
 
             # I1Batch.to(mps)
             # labels.to(mps)

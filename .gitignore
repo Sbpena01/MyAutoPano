@@ -5,3 +5,4 @@ Phase1/Outputs
 __pycache__/
 .DS_Store
 Logs/
+Checkpoints/
