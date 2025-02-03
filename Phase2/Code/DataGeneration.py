@@ -10,7 +10,7 @@ import csv
 DEBUG_LEVEL = 0
 PAIR_COUNT = 0
 PERTURBATION_RANGE = 10
-THRESHMAX = 10
+THRESHMAX = 20
 
 def load_images(im_path: str, num_images: int, flags: int = cv2.IMREAD_GRAYSCALE) -> tuple[list[cv2.Mat], list[str]]:
     images = []
@@ -149,7 +149,7 @@ def main():
     Parser.add_argument(
         "--BatchSize",
         type=int,
-        default=6,
+        default=64,
         help="Increase debug verbosity with higher debug level"
     )
 
@@ -196,7 +196,6 @@ def main():
 
             # display_bounding_boxes('unwarped_annotated', image, [unwarped_bb, warped_bb])
             
-            
             """ Use Inverse of H (H^b_a) to transform image and generate warped Subpatch """
             homography = cv2.getPerspectiveTransform(unwarped_bb.get_points_np(), warped_bb.get_points_np())
             homography_inv = np.linalg.inv(homography)
@@ -232,7 +231,6 @@ def main():
 
             if dsize[0] > image.shape[0] * THRESHMAX or dsize[1] > image.shape[1] * THRESHMAX:
                 print(f"ERROR: dsize too large ;), dsize:{dsize}")
-                i -=1
                 continue
 
             offset_x = -x_min if x_min < 0 else 0
@@ -262,7 +260,6 @@ def main():
 
             """" Stack image frames (data_out) to a file, and generate corresponding label H_4pt """
             patch_stack = np.array([unwarped_patch, warped_patch])
-            print(patch_stack.shape)
             H_4pt = warped_bb.get_points_np() - unwarped_bb.get_points_np()
             patch_stack_write_list.append(patch_stack)
             homography_write_list.append(H_4pt)
@@ -270,10 +267,9 @@ def main():
                 export_data(patch_stack_write_list, homography_write_list, OutputPath, idx)
                 patch_stack_write_list = []
                 homography_write_list = []
-            idx += 1
+                idx += 1    
             i += 1
     return
-
 
 if __name__ == '__main__':
     main()
