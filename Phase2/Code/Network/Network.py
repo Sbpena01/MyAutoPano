@@ -89,7 +89,8 @@ class Net(nn.Module):
         self.relu8 = nn.ReLU()
         
         self.flatten = nn.Flatten()
-        self.dropout = nn.Dropout()
+        self.dropout1 = nn.Dropout()
+        self.dropout2 = nn.Dropout()
         self.fc1 = nn.Linear(32768, 1024)
         self.relu9 = nn.ReLU()
         self.fc2 = nn.Linear(1024, 8)
@@ -135,7 +136,8 @@ class Net(nn.Module):
         x = self.relu8(self.bn8(self.conv8(x)))
         
         x = self.flatten(x)
-        x = self.dropout(x)
+        x = self.dropout1(x)
         x = self.relu9(self.fc1(x))
+        x = self.dropout2(x)
         x = self.fc2(x)
         return x

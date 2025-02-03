@@ -8,4 +8,4 @@ Logs/
 Phase2/Checkpoints/
 SLURM_OUTPUT/
 *.out
-
+Checkpoints/

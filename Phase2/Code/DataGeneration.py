@@ -5,6 +5,7 @@ import numpy as np
 import random
 from Utilities import Point, Bounding_Box 
 import copy
+import csv
 
 DEBUG_LEVEL = 0
 PAIR_COUNT = 0
@@ -87,11 +88,27 @@ def display_bounding_boxes(name:str, image:np.ndarray, bounding_boxes: list[Boun
     cv2.line(imcopy, bounding_boxes[1].bl.to_xy_tuple(), bounding_boxes[1].tl.to_xy_tuple(), (255, 0, 0), 2)
     cv2.imshow(name, imcopy)
 
-def export_data(image_patch: np.ndarray, H_4pt, outpath, idx):
-    image_patch = image_patch.flatten()
-    np.savetxt(f'{outpath}Patch_Stacks/patch_stack_{idx}.csv', image_patch)
-    np.savetxt(f'{outpath}Homographies/homography_{idx}.csv', H_4pt, delimiter=',')
+
+# def export_data(image_patch: np.ndarray, H_4pt, outpath, idx):
+#     image_patch = image_patch.flatten()
+#     np.savetxt(f'{outpath}Patch_Stacks/patch_stack_{idx}.csv', image_patch)
+#     np.savetxt(f'{outpath}Homographies/homography_{idx}.csv', H_4pt, delimiter=',')
     
+def export_data(patches, homographies, outpath, idx):
+    with open(f'{outpath}Patch_Stacks/patch_stack_{idx}.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        for stack in patches:
+            for matrix in stack:
+                writer.writerows(matrix)
+            writer.writerow([])
+                
+    with open(f'{outpath}Homographies/homography_{idx}.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        for homography in homographies:
+            writer.writerows(homography)
+            writer.writerow([])
+
+
 def main():
     Parser = argparse.ArgumentParser()
     """
@@ -129,23 +146,37 @@ def main():
         help="Increase debug verbosity with higher debug level"
     )
 
+    Parser.add_argument(
+        "--BatchSize",
+        type=int,
+        default=6,
+        help="Increase debug verbosity with higher debug level"
+    )
+
+
     Args = Parser.parse_args()
     ImagePath = Args.ImagePath
     OutputPath = Args.OutputPath
     NumImages = Args.NumImages
+    BatchSize = Args.BatchSize
     global DEBUG_LEVEL, PAIR_COUNT
     DEBUG_LEVEL = Args.DebugLevel
     PATCH_COUNT = Args.PatchCount
     
 
     """ Read a set of images from input directory """
-    image_set, image_names = load_images(ImagePath, NumImages, cv2.IMREAD_COLOR_RGB)
+    image_set, image_names = load_images(ImagePath, NumImages, cv2.IMREAD_GRAYSCALE)
+
+    NumImages = len(image_set)
 
     """ Generate a sub patch within bounds [(x_min,y_min), (x_man, y_max)] (P_a) """
     
     image = image_set[0]
     name = image_names[0]
     idx = 1
+    # batch_count = 0
+    homography_write_list = []
+    patch_stack_write_list = []
 
     for image, name in zip(image_set, image_names):
         print(f"Generating Patches from Image: {name.replace('.jpg','')} out of {NumImages}")
@@ -230,9 +261,15 @@ def main():
             # cv2.destroyAllWindows()
 
             """" Stack image frames (data_out) to a file, and generate corresponding label H_4pt """
-            patch_stack = np.concatenate((unwarped_patch, warped_patch), axis=2)
+            patch_stack = np.array([unwarped_patch, warped_patch])
+            print(patch_stack.shape)
             H_4pt = warped_bb.get_points_np() - unwarped_bb.get_points_np()
-            export_data(patch_stack, H_4pt, OutputPath, idx)
+            patch_stack_write_list.append(patch_stack)
+            homography_write_list.append(H_4pt)
+            if len(patch_stack_write_list) >= BatchSize:
+                export_data(patch_stack_write_list, homography_write_list, OutputPath, idx)
+                patch_stack_write_list = []
+                homography_write_list = []
             idx += 1
             i += 1
     return
