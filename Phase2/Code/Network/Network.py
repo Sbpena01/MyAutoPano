@@ -16,16 +16,39 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 import pytorch_lightning as pl
-
+import Utilities
+import cv2
 # Don't generate pyc codes
 sys.dont_write_bytecode = True
 
 
-def LossFn(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
+def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
     ground_truth_H_4pt = torch.reshape(ground_truth_H_4pt, predicted_H_4pt.shape)
-    diff = predicted_H_4pt - ground_truth_H_4pt
-    loss = torch.norm(diff)
-    return loss * 0.5
+    return torch.nn.functional.mse_loss(predicted_H_4pt, ground_truth_H_4pt)
+
+def LossFn_unsup(delta, img_a, patch_b, corners):
+    ###############################################
+    # Fill your loss function of choice here!
+    ###############################################
+    homography = Utilities.tensor_dlt(delta, corners)
+
+    # send homography throguh STN?
+
+
+
+    # dsize, H_offset = Utilities.calculate_dsize(img_a, homography)
+    # H_offset = np.dot(H_offset, homography)
+    # warped_img_a = cv2.warpPerspective(img_a, H_offset)
+
+    warpped_
+
+    ###############################################
+    # You can use kornia to get the transform and warp in this project
+    # Bonus if you implement it yourself
+    ###############################################
+    
+
+    return
 
 
 class HomographyModel(pl.LightningModule):
@@ -40,7 +63,7 @@ class HomographyModel(pl.LightningModule):
     def validation_step(self, batch):
         homographies, labels = batch
         delta = self.model(homographies)
-        loss = LossFn(delta, labels)
+        loss = LossFn_sup(delta, labels)
         return {"val_loss": loss}
 
     def validation_epoch_end(self, outputs):
@@ -94,6 +117,25 @@ class Net(nn.Module):
         self.fc1 = nn.Linear(32768, 1024)
         self.relu9 = nn.ReLU()
         self.fc2 = nn.Linear(1024, 8)
+
+        self.fc_loc = nn.Sequential(
+            nn.Linear(10 * 3 * 3, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
+        )
+
+        # Initialize the weights/bias with identity transformation
+        self.fc_loc[2].weight.data.zero_()
+        self.fc_loc[2].bias.data.copy_(
+            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
+        )
+
+        self.localization = nn.Sequential(
+            nn.Conv2d(1, 8, kernel_size=7),
+            nn.MaxPool2d(2, stride=2),
+            nn.ReLU(True),
+            nn.Conv2d(8, 10, kernel_size=5),
+            nn.MaxPool2d(2, stride=2),
+            nn.ReLU(True),
+        )
 
     #############################
     # You will need to change the input size and output

@@ -24,7 +24,7 @@ from torchvision.transforms import v2
 from torch.utils.tensorboard import SummaryWriter
 # from torchvision import datasets, transforms
 from torch.optim import AdamW, SGD
-from Network.Network import HomographyModel, LossFn
+from Network.Network import HomographyModel, LossFn_sup, LossFN_unsup
 import cv2
 import sys
 import os
@@ -68,7 +68,8 @@ def GenerateBatch(BasePath, DirNamesTrain, DirSize):
     labels = []
 
     # Generate random image
-    RandIdx = random.randint(1,DirSize / 64)
+    # RandIdx = random.randint(1, DirSize-1)
+    RandIdx = random.randint(1, 5)
     # TODO: fix read_data to match size
     image, label = read_data(BasePath+DirNamesTrain, RandIdx)
 
@@ -138,7 +139,7 @@ def TrainOperation(
     # Writer = SummaryWriter(LogsPath)
 
 
-    cuda = torch.device("cuda")
+    # cuda = torch.device("cuda")
 
     # if LatestFile is not None:
     #     CheckPoint = torch.load(CheckPointPath + LatestFile + ".ckpt")
@@ -151,7 +152,7 @@ def TrainOperation(
     #     print("New model initialized....")
 
     StartEpoch = 0
-    model.to(cuda)
+    # model.to(cuda)
 
     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
         NumIterationsPerEpoch = int(NumTrainSamples / MiniBatchSize / DivTrain)
@@ -159,17 +160,23 @@ def TrainOperation(
         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
             I1Batch, labels = GenerateBatch(BasePath, DirNamesTrain, NumTrainSamples)
 
-            I1Batch = I1Batch.to(cuda)
-            labels = labels.to(cuda)
+            # I1Batch = I1Batch.to(cuda)
+            # labels = labels.to(cuda)
 
             # Predict output with forward pass
             PredicatedCoordinatesBatch = model(I1Batch)
-            LossThisBatch = LossFn(PredicatedCoordinatesBatch, labels)
+            if ModelType == 'Sup':
+                LossThisBatch = LossFn_sup(PredicatedCoordinatesBatch, labels)
+            elif ModelType == 'Unsup':
+                LossThisBatch = LossFN_unsup()  #TODO, complete this function
+            else:
+                raise ValueError(f"Unknown ModelType. Currently is {ModelType}")
 
             Optimizer.zero_grad()
             LossThisBatch.backward()
             Optimizer.step()
-            epoch_loss += LossThisBatch
+            epoch_loss += LossThisBatch.item()
+            print(epoch_loss)
 
             # Save checkpoint every some SaveCheckPoint's iterations
             if PerEpochCounter % SaveCheckPoint == 0:
@@ -207,8 +214,8 @@ def TrainOperation(
         
         with torch.no_grad():
             val_ims, val_labels = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
-            val_ims = val_ims.to(cuda)
-            val_labels = val_labels.to(cuda)
+            # val_ims = val_ims.to(cuda)
+            # val_labels = val_labels.to(cuda)
             result = model.validation_step((val_ims, val_labels))
         
         print(f"Validation Loss: {result['val_loss']}, Training Loss: {epoch_loss}")
@@ -243,7 +250,7 @@ def main():
     )
     Parser.add_argument(
         "--CheckPointPath",
-        default="Checkpoints/",
+        default="Phase2/Checkpoints/",
         help="Path to save Checkpoints, Default: Checkpoints/",
     )
 
@@ -307,10 +314,10 @@ def main():
     
 
     NumTrainSamples = next(os.walk(BasePath+"Train/Homographies"))[2]
-    NumTrainSamples = len(NumTrainSamples) * 64
+    NumTrainSamples = len(NumTrainSamples) * MiniBatchSize
 
     NumValSamples = next(os.walk(BasePath+"Val/Homographies"))[2] #directory is your directory path as string
-    NumValSamples = len(NumValSamples) * 64
+    NumValSamples = len(NumValSamples) * MiniBatchSize
     
     SaveCheckPoint = 100
 

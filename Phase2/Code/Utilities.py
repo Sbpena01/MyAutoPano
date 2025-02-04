@@ -72,6 +72,12 @@ def calculate_dsize(image: np.ndarray, homography):
     
     return dsize, offset_matrix
 
+def tensor_dlt(homography_4pt: np.ndarray, corners_a: np.ndarray):
+    if homography_4pt.shape != corners_a.shape:
+        raise ValueError(f"4 Point Homography and Corner A matrices do not share the same shape. H_4pt: {homography_4pt.shape}  C_a: {corners_a.shape}")
+    corners_b = corners_a + homography_4pt
+    return compute_homography(corners_a, corners_b)
+
 def compute_homography(points_1, points_2):
     p1, p2, p3, p4 = points_1
     p1_p, p2_p, p3_p, p4_p = points_2
