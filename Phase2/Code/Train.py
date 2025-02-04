@@ -68,36 +68,15 @@ def GenerateBatch(BasePath, DirNamesTrain, DirSize):
     labels = []
 
     # Generate random image
-    RandIdx = random.randint(1,DirSize)
+    RandIdx = random.randint(1,DirSize / 64)
     # TODO: fix read_data to match size
     image, label = read_data(BasePath+DirNamesTrain, RandIdx)
-    ImageNum += 1
-
-    # ##########################################################
-    # # Add any standardization or data augmentation here!
-    # ##########################################################
-    # transforms = v2.Compose([
-    #     v2.GaussianBlur((3,3), sigma=1),
-    #     v2.ColorJitter()
-        
-    # ])
 
     # # Append All Images and Mask
-    I1Batch.append(torch.from_numpy(image))
-    labels.append(torch.tensor(label))
-
-    return torch.stack(I1Batch), torch.stack(labels)
-
-def Generate_Val_Batch(BasePath, DirNamesVal, NumValSamples):
-    I1Batch = []
-    labels = []
-
-    for ImageNum in range(1,NumValSamples):
-        image, label = read_data(BasePath+DirNamesVal, ImageNum)
-        I1Batch.append(torch.from_numpy(image))
-        labels.append(torch.tensor(label))
-        
-    return torch.stack(I1Batch), torch.stack(labels)
+    # I1Batch.append(torch.from_numpy(image))
+    # labels.append(torch.tensor(label))
+    return torch.from_numpy(image), torch.from_numpy(label)
+    # return torch.stack(I1Batch), torch.stack(labels)
 
 
 def PrettyPrint(NumEpochs, DivTrain, MiniBatchSize, NumTrainSamples, LatestFile):
@@ -225,7 +204,7 @@ def TrainOperation(
             # If you don't flush the tensorboard doesn't update until a lot of iterations!
             # Writer.flush()
         
-
+        
         with torch.no_grad():
             val_ims, val_labels = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
             val_ims = val_ims.to(cuda)
@@ -288,8 +267,8 @@ def main():
     Parser.add_argument(
         "--MiniBatchSize",
         type=int,
-        default=3,
-        help="Size of the MiniBatch to use, Default:32",
+        default=64,
+        help="Size of the MiniBatch to use, Default:64",
     )
     Parser.add_argument(
         "--LoadCheckPoint",
@@ -328,10 +307,10 @@ def main():
     
 
     NumTrainSamples = next(os.walk(BasePath+"Train/Homographies"))[2]
-    NumTrainSamples = len(NumTrainSamples)
+    NumTrainSamples = len(NumTrainSamples) * 64
 
     NumValSamples = next(os.walk(BasePath+"Val/Homographies"))[2] #directory is your directory path as string
-    NumValSamples = int(len(NumValSamples) * 0.1)
+    NumValSamples = len(NumValSamples) * 64
     
     SaveCheckPoint = 100
 

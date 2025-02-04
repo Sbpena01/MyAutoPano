@@ -57,7 +57,7 @@ class Net(nn.Module):
         OutputSize - Size of the Output
         """
         super().__init__()
-        self.conv1 = nn.Conv2d(6, 64, kernel_size=(3,3), padding=1, stride=1)
+        self.conv1 = nn.Conv2d(2, 64, kernel_size=(3,3), padding=1, stride=1)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu1 = nn.ReLU()
         self.conv2 = nn.Conv2d(64, 64, kernel_size=(3,3), padding=1, stride=1)

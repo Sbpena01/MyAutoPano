@@ -10,27 +10,27 @@ def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
         current = []
         for row in reader:
             if not row:
-                current_np = np.array(current)
+                current_np = np.array(current, dtype=np.float32)
                 current_np = np.reshape(current_np, (128, 128, 2))
                 patches.append(current_np)
                 current = []
                 continue
             current.append(row)
-        print(len(patches))
-    
     homography = []
     with open(f"{path}Homographies/homography_{idx}.csv", 'r') as csvfile:
         reader = csv.reader(csvfile)
         current = []
         for row in reader:
             if not row:
-                current_np = np.array(current)
+                current_np = np.array(current, dtype=np.float32)
                 current_np = np.reshape(current_np, (4, 2))
                 homography.append(current_np)
                 current = []
                 continue
             current.append(row)
-        print(len(homography))
+    patches = np.array(patches)
+    homography = np.array(homography)
+    patches = np.transpose(patches, axes=(0, 3, 1, 2))
     return patches, homography
 
 def calculate_dsize(image: np.ndarray, homography):
