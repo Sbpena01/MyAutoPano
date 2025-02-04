@@ -6,7 +6,7 @@
 #SBATCH -p short
 #SBATCH -t 12:00:00
 #SBATCH --error=SLURM_OUTPUT/slurm_gen_data_%A_%a.err
-#SBATCH --output=SLURM/OUTPUT/slurm_gen_data_%A_%a.out
+#SBATCH --output=SLURM_OUTPUT/slurm_gen_data_%A_%a.out
 #SBATCH --mail-user=rpblair@wpi.edu
 #SBATCH --mail-type=ALL
 #SBATCH --array=1-2
@@ -20,4 +20,4 @@ source ../panovenv/bin/activate
 
 pip install -r requirements.txt
 
-python -u Phase2/Code/DataGeneration.py --OutputPath ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]} --ImagePath ${IM_PATHS[$SLURM_ARRAY_TASK_ID-1]} --NumImages 640 --PatchCount 10 --BatchSize 64
+python -u Phase2/Code/DataGeneration.py --OutputPath ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]} --ImagePath ${IM_PATHS[$SLURM_ARRAY_TASK_ID-1]} --NumImages 640 --PatchCount 25 --BatchSize 64
