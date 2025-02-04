@@ -1,13 +1,36 @@
 import numpy as np
 import pandas as pd
+import csv
+import random
 
 def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
-    patches = pd.read_csv(f"{path}Patch_Stacks/patch_stack_{idx}.csv", header=None)
-    patches = patches.to_numpy(dtype=np.float32)
-    patches = np.reshape(patches, (128,128,6))
-    patches = np.transpose(patches, axes=(2,0,1))
-    homography = pd.read_csv(f"{path}Homographies/homography_{idx}.csv", header=None)
-    homography = homography.to_numpy(dtype=np.float32)
+    patches = []
+    with open(f"{path}Patch_Stacks/patch_stack_{idx}.csv", 'r') as csvfile:
+        reader = csv.reader(csvfile)
+        current = []
+        for row in reader:
+            if not row:
+                current_np = np.array(current)
+                current_np = np.reshape(current_np, (128, 128, 2))
+                patches.append(current_np)
+                current = []
+                continue
+            current.append(row)
+        print(len(patches))
+    
+    homography = []
+    with open(f"{path}Homographies/homography_{idx}.csv", 'r') as csvfile:
+        reader = csv.reader(csvfile)
+        current = []
+        for row in reader:
+            if not row:
+                current_np = np.array(current)
+                current_np = np.reshape(current_np, (4, 2))
+                homography.append(current_np)
+                current = []
+                continue
+            current.append(row)
+        print(len(homography))
     return patches, homography
 
 def calculate_dsize(image: np.ndarray, homography):
