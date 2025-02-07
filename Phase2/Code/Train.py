@@ -164,14 +164,16 @@ def TrainOperation(
 
             # I1Batch = I1Batch.to(cuda)
             # labels = labels.to(cuda)
+            # corners = corners.to(cuda)
 
             # Predict output with forward pass
-            PredicatedCoordinatesBatch = model(I1Batch)
+            
             if ModelType == 'Sup':
+                PredicatedCoordinatesBatch = model(I1Batch)
                 LossThisBatch = LossFn_sup(PredicatedCoordinatesBatch, labels)
             elif ModelType == 'Unsup':
-                #TODO, find a way to deliver corners. Maybe during gen_data?
-                LossThisBatch = LossFn_unsup(PredicatedCoordinatesBatch, image_idx, I1Batch, corners=corners)
+                PredicatedCoordinatesBatch = model(I1Batch, corners, image_idx)
+                LossThisBatch = LossFn_unsup(PredicatedCoordinatesBatch, I1Batch)
             else:
                 raise ValueError(f"Unknown ModelType. Currently is {ModelType}")
 

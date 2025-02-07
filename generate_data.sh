@@ -20,4 +20,4 @@ source ../panovenv/bin/activate
 
 pip install -r requirements.txt
 
-python -u Phase2/Code/DataGeneration.py --OutputPath ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]} --ImagePath ${IM_PATHS[$SLURM_ARRAY_TASK_ID-1]} --NumImages 640 --PatchCount 25 --BatchSize 64
+python -u Phase2/Code/DataGeneration.py --OutputPath ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]} --ImagePath ${IM_PATHS[$SLURM_ARRAY_TASK_ID-1]} --NumImages 640 --PatchCount 64 --BatchSize 64

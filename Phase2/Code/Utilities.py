@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import csv
 import cv2
+import torch
 
 def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
     patches = []
@@ -81,13 +82,19 @@ def get_image_from_idx(image_idx, is_train=True):
         return cv2.imread(f"Phase2/Data/Train/{image_idx}.jpg", cv2.IMREAD_GRAYSCALE)
     return cv2.imread(f"Phase2/Data/Val/{image_idx}.jpg", cv2.IMREAD_GRAYSCALE)
 
-def tensor_dlt(homography_4pt: np.ndarray, corners_a: np.ndarray):
+def tensor_dlt(homography_4pt: torch.tensor, corners_a: list[np.ndarray]):
+    # TODO: step through
     if homography_4pt.shape != corners_a.shape:
         raise ValueError(f"4 Point Homography and Corner A matrices do not share the same shape. H_4pt: {homography_4pt.shape}  C_a: {corners_a.shape}")
-    corners_b = np.uint8(corners_a + homography_4pt)
-    return compute_homography(corners_a, corners_b)
 
-def spacial_transform_layer(homography:np.ndarray, image:np.ndarray, corners: np.ndarray):
+    output = []
+    for H, c_a in zip(homography_4pt, corners_a):
+        c_b = torch.from_numpy(c_a) + H
+        H_3x3 = compute_homography(c_a, c_b)
+        output.append(H_3x3)
+    return torch.tesor(output)  # 64x3x3
+
+def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners_list: torch.tensor):
     # Step One: calculated inverse homography
     W = image.shape[1]
     H = image.shape[0]
@@ -97,23 +104,30 @@ def spacial_transform_layer(homography:np.ndarray, image:np.ndarray, corners: np
         [0, 0, 1]
     ])
     # H^(-1) = M^(-1)*H^(-1)*M
-    homography_inv = np.matmul(np.matmul(np.linalg.inv(M), np.linalg.inv(homography)), M)
+    estim_patch_stack = []
+    for homography, corners in zip(homographies, corners_list):
+        homography_inv = np.matmul(np.matmul(np.linalg.inv(M), np.linalg.inv(homography)), M)
 
-    # Step Two: Parameterized Sampling Grid Generator (PSGG)
-    # Creating a matrix of similar dimensions as the image. We have 2 channels to store x,y coords.
-    G = np.zeros((image.shape[1], image.shape[0], 2))
-    for row_idx in range(image.shape[0]):
-        for col_idx in range(image.shape[1]):
-            coord_np = np.array([row_idx+corners[0,0], col_idx+corners[0,1], 1]).transpose()
-            resultant = np.matmul(homography_inv, coord_np)
-            G[row_idx, col_idx, 0] = resultant[0]  # X
-            G[row_idx, col_idx, 1] = resultant[1]  # Y
-    V = np.zeros_like(image)
-    for i in range(V.shape[0]):
-        for j in range(V.shape[1]):
-            transformed_coordinates = G[i,j]
-            V[i,j] = image[transformed_coordinates]
-    return 
+        # Step Two: Parameterized Sampling Grid Generator (PSGG)
+        # Creating a matrix of similar dimensions as the image. We have 2 channels to store x,y coords.
+        G = np.zeros((image.shape[1], image.shape[0], 2))
+        for row_idx in range(image.shape[0]):
+            for col_idx in range(image.shape[1]):
+                coord_np = np.array([row_idx, col_idx, 1]).transpose()
+                resultant = np.matmul(homography_inv, coord_np)
+                
+                G[row_idx, col_idx, 0] = resultant[0]# X
+                G[row_idx, col_idx, 1] = resultant[1]# Y
+
+        # Step Three: sample G to create estimation of patch B.
+        V = torch.nn.functional.grid_sample(G, torch.tensor([1,128,128,2]), padding_mode="reflection")
+        warpped_patch = np.zeros((128,128))
+        for y in range(V.shape[0]):
+            for x in range(V.shape[1]):
+                transformed_coordinates = V[y,x]
+                warpped_patch[y,x] = image[transformed_coordinates]
+        estim_patch_stack.append(warpped_patch)
+    return estim_patch_stack
 
 def compute_homography(points_1, points_2):
     p1, p2, p3, p4 = points_1

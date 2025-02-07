@@ -26,46 +26,17 @@ def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
     ground_truth_H_4pt = torch.reshape(ground_truth_H_4pt, predicted_H_4pt.shape)
     return torch.nn.functional.mse_loss(predicted_H_4pt, ground_truth_H_4pt)
 
-def LossFn_unsup(deltas, img_a_idx, patch_stacks, corners=None):
-    # The way this works is we get the 3x3 homography from the H_4pt output from the agent.
-    # Then, we warp the corners given to us using the 3x3 homography. We compare patch_b
-    # to the patch defined by the warped corners used in img_a. The sum of differences 
-    # between the two patches is the loss function (L1).
-    for delta, patch_stack, patch_corners in zip(deltas, patch_stacks, corners):
-        patch_a = patch_stack[0]
-        patch_b = patch_stack[1]
-        patch_corners = np.float32(np.reshape(patch_corners, (4,2)))
-        delta = np.reshape(delta.detach().numpy(), (4,2))  # Does not remove from original matrix, creates a copy.
-        
-        homography = Utilities.tensor_dlt(delta, patch_corners)
-
-        original_image = Utilities.get_image_from_idx(img_a_idx)
-        Utilities.spacial_transform_layer(homography, patch_b, patch_corners)
-        
-
-
-
-
-    # dsize, H_offset = Utilities.calculate_dsize(img_a, homography)
-    # H_offset = np.dot(H_offset, homography)
-    # warped_img_a = cv2.warpPerspective(img_a, H_offset)
-
-    # warpped_
-
-    ###############################################
-    # You can use kornia to get the transform and warp in this project
-    # Bonus if you implement it yourself
-    ###############################################
-    
-
-    return
+def LossFn_unsup(x, ground_truth_patches):
+    patches_b = ground_truth_patches[1, :, :]
+    return F.l1_loss(patches_b,x)
 
 
 class HomographyModel(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, ModelType):
         super(HomographyModel, self).__init__()
         # self.hparams = hparams
-        self.model = Net()
+        self.ModelType = ModelType
+        self.model = Net(ModelType)
 
     def forward(self, x):
         return self.model(x)
@@ -83,7 +54,8 @@ class HomographyModel(pl.LightningModule):
 
 
 class Net(nn.Module):
-    def __init__(self):
+    def __init__(self, ModelType):
+        self.ModelType = ModelType
         """
         Inputs:
         InputSize - Size of the Input
@@ -128,33 +100,34 @@ class Net(nn.Module):
         self.relu9 = nn.ReLU()
         self.fc2 = nn.Linear(1024, 8)
 
-        self.fc_loc = nn.Sequential(
-            nn.Linear(10 * 3 * 3, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
-        )
+        if(self.ModelType == 'unsup'):
+            self.fc_loc = nn.Sequential(
+                nn.Linear(10 * 3 * 3, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
+            )
 
-        # Initialize the weights/bias with identity transformation
-        self.fc_loc[2].weight.data.zero_()
-        self.fc_loc[2].bias.data.copy_(
-            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
-        )
+            # Initialize the weights/bias with identity transformation
+            self.fc_loc[2].weight.data.zero_()
+            self.fc_loc[2].bias.data.copy_(
+                torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
+            )
 
-        self.localization = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=7),
-            nn.MaxPool2d(2, stride=2),
-            nn.ReLU(True),
-            nn.Conv2d(8, 10, kernel_size=5),
-            nn.MaxPool2d(2, stride=2),
-            nn.ReLU(True),
-        )
+            self.localization = nn.Sequential(
+                nn.Conv2d(1, 8, kernel_size=7),
+                nn.MaxPool2d(2, stride=2),
+                nn.ReLU(True),
+                nn.Conv2d(8, 10, kernel_size=5),
+                nn.MaxPool2d(2, stride=2),
+                nn.ReLU(True),
+            )
 
     #############################
     # You will need to change the input size and output
     # size for your Spatial transformer network layer!
     #############################
-    def stn(self, x):
+    def stn(self, x, image):
         "Spatial transformer network forward function"
         xs = self.localization(x)
-        xs = xs.view(-1, 10 * 3 * 3)
+        xs = xs.view(-1, 64 * 3 * 3)
         theta = self.fc_loc(xs)
         theta = theta.view(-1, 2, 3)
 
@@ -163,7 +136,7 @@ class Net(nn.Module):
 
         return x
 
-    def forward(self, x):
+    def forward(self, x, corners, idx):
         """
         Input:
         xa is a MiniBatch of the image a
@@ -192,4 +165,15 @@ class Net(nn.Module):
         x = self.relu9(self.fc1(x))
         x = self.dropout2(x)
         x = self.fc2(x)
+        if self.ModelType == 'sup':
+            return x
+        
+        # (64,1,8) # TODO: check
+
+        # tensor DLT
+        x = Utilities.tensor_dlt(x, corners)
+        # stn
+        image = Utilities.get_image_from_idx(idx, True)
+        x = Utilities.spacial_transform_layer(x, image, corners)
+        # (64, 128, 128)
         return x
