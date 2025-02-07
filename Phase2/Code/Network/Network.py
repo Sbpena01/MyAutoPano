@@ -27,7 +27,7 @@ def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
     return torch.nn.functional.mse_loss(predicted_H_4pt, ground_truth_H_4pt)
 
 def LossFn_unsup(x, ground_truth_patches):
-    patches_b = ground_truth_patches[1, :, :]
+    patches_b = ground_truth_patches[:, 0:1, :, :]
     return F.l1_loss(patches_b,x)
 
 class HomographyModel(pl.LightningModule):
@@ -41,9 +41,9 @@ class HomographyModel(pl.LightningModule):
         return self.model(x, corners, image_idx)
 
     def validation_step(self, batch):
-        homographies, labels = batch
-        delta = self.model(homographies)
-        loss = LossFn_sup(delta, labels)
+        homographies, labels, corners, image_idx  = batch
+        delta = self.model(homographies, corners, image_idx)
+        loss = LossFn_sup(delta, labels) if self.ModelType=='Sup' else LossFn_unsup(delta, homographies)
         return {"val_loss": loss}
 
     def validation_epoch_end(self, outputs):

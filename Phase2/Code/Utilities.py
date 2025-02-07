@@ -105,32 +105,48 @@ def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners
         [0, 0, 1]
     ])
     # H^(-1) = M^(-1)*H^(-1)*M
-    estim_patch_stack = []
+    estim_patch_stack = torch.empty((1,1,128,128), requires_grad=True)
+    
     for homography, corners in zip(homographies, corners_list):
         homography_inv = np.matmul(np.matmul(np.linalg.inv(M), np.linalg.inv(homography)), M)
 
+        affine_grid = np.array([homography_inv[0:2, 0:3]])
+
+
+        # dummy_grid = torch.zeros((1,1,image.shape[1], image.shape[0]))
+        # input = np.array([[image]])
+
+        input = torch.from_numpy(np.array([[image]], dtype=np.float64))
+        
+
+        grid = torch.nn.functional.affine_grid(torch.from_numpy(affine_grid), torch.Size((1,1,image.shape[0], image.shape[1])))
+        full_warped_image = torch.nn.functional.grid_sample(input, grid, padding_mode='reflection')
+
+        corners = torch.reshape(corners, (4,2))
+        patch_B = full_warped_image[:, :, int(corners[0,1].item()):int(corners[3,1].item()), int(corners[0,0].item()):int(corners[1,0].item())]
         # Step Two: Parameterized Sampling Grid Generator (PSGG)
         # Creating a matrix of similar dimensions as the image. We have 2 channels to store x,y coords.
-        G = np.zeros((image.shape[0], image.shape[1], 2))
-        for row_idx in range(H-1):
-            for col_idx in range(W-1):
-                coord_np = np.array([row_idx, col_idx, 1]).transpose()
-                resultant = np.matmul(homography_inv, coord_np)
+        # G = np.zeros((image.shape[0], image.shape[1], 2))
+        # for row_idx in range(H-1):
+        #     for col_idx in range(W-1):
+        #         coord_np = np.array([row_idx, col_idx, 1]).transpose()
+        #         resultant = np.matmul(homography_inv, coord_np)
                 
-                G[row_idx, col_idx, 0] = resultant[0]# X
-                G[row_idx, col_idx, 1] = resultant[1]# Y
+        #         G[row_idx, col_idx, 0] = resultant[0]# X
+        #         G[row_idx, col_idx, 1] = resultant[1]# Y
 
-        G = np.array([G], dtype=np.double)
-        grid = torch.zeros((1, 128, 128, 2), dtype=torch.double)
-        # Step Three: sample G to create estimation of patch B.
-        V = torch.nn.functional.grid_sample(torch.from_numpy(image), torch.from_numpy(G), padding_mode="reflection")
-        warpped_patch = np.zeros((128,128))
-        for y in range(V.shape[0]):
-            for x in range(V.shape[1]):
-                transformed_coordinates = V[y,x]
-                warpped_patch[y,x] = image[transformed_coordinates]
-        estim_patch_stack.append(warpped_patch)
-    return estim_patch_stack
+        # G = np.array([G], dtype=np.double)
+        # grid = torch.zeros((1, 128, 128, 2), dtype=torch.double)
+        # # Step Three: sample G to create estimation of patch B.
+        # V = torch.nn.functional.grid_sample(torch.from_numpy(image), torch.from_numpy(G), padding_mode="reflection")
+        # warped_patch = np.zeros((128,128))
+        # for y in range(V.shape[0]):
+        #     for x in range(V.shape[1]):
+        #         transformed_coordinates = V[y,x]
+        #         warped_patch[y,x] = image[transformed_coordinates]
+        estim_patch_stack = torch.vstack((estim_patch_stack, patch_B))
+
+    return estim_patch_stack[0:64, :, :, :]
 
 def compute_homography(points_1, points_2):
     points_1 = torch.reshape(points_1, (4,2))

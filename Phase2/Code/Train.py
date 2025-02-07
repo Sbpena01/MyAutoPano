@@ -132,7 +132,7 @@ def TrainOperation(
     ###############################################
     # Fill your optimizer of choice here!
     ###############################################
-    Optimizer = SGD(model.parameters(), lr=0.005, momentum=0.9)
+    Optimizer = SGD(model.parameters(), lr=0.0005, momentum=0.9)
 
     # Tensorboard
     # Create a summary to monitor loss tensor
@@ -218,10 +218,10 @@ def TrainOperation(
         
         
         with torch.no_grad():
-            val_ims, val_labels = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
+            val_ims, val_labels, corners, image_idx = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
             # val_ims = val_ims.to(cuda)
             # val_labels = val_labels.to(cuda)
-            result = model.validation_step((val_ims, val_labels))
+            result = model.validation_step((val_ims, val_labels, corners, image_idx))
         
         print(f"Validation Loss: {result['val_loss']}, Training Loss: {epoch_loss}")
         
