@@ -1,14 +1,18 @@
 import numpy as np
 import pandas as pd
 import csv
-import random
+import cv2
 
 def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
     patches = []
+    corners = []
     with open(f"{path}Patch_Stacks/patch_stack_{idx}.csv", 'r') as csvfile:
         reader = csv.reader(csvfile)
         current = []
         for row in reader:
+            if len(row) == 8:
+                corners.append(row)
+                continue
             if not row:
                 current_np = np.array(current, dtype=np.float32)
                 current_np = np.reshape(current_np, (128, 128, 2))
@@ -31,7 +35,7 @@ def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
     patches = np.array(patches)
     homography = np.array(homography)
     patches = np.transpose(patches, axes=(0, 3, 1, 2))
-    return patches, homography
+    return patches, homography, corners
 
 def calculate_dsize(image: np.ndarray, homography):
     corners = np.array([
@@ -72,11 +76,44 @@ def calculate_dsize(image: np.ndarray, homography):
     
     return dsize, offset_matrix
 
+def get_image_from_idx(image_idx, is_train=True):
+    if is_train:
+        return cv2.imread(f"Phase2/Data/Train/{image_idx}.jpg", cv2.IMREAD_GRAYSCALE)
+    return cv2.imread(f"Phase2/Data/Val/{image_idx}.jpg", cv2.IMREAD_GRAYSCALE)
+
 def tensor_dlt(homography_4pt: np.ndarray, corners_a: np.ndarray):
     if homography_4pt.shape != corners_a.shape:
         raise ValueError(f"4 Point Homography and Corner A matrices do not share the same shape. H_4pt: {homography_4pt.shape}  C_a: {corners_a.shape}")
-    corners_b = corners_a + homography_4pt
+    corners_b = np.uint8(corners_a + homography_4pt)
     return compute_homography(corners_a, corners_b)
+
+def spacial_transform_layer(homography:np.ndarray, image:np.ndarray, corners: np.ndarray):
+    # Step One: calculated inverse homography
+    W = image.shape[1]
+    H = image.shape[0]
+    M = np.array([
+        [W/2, 0, W/2],
+        [0, H/2, H/2],
+        [0, 0, 1]
+    ])
+    # H^(-1) = M^(-1)*H^(-1)*M
+    homography_inv = np.matmul(np.matmul(np.linalg.inv(M), np.linalg.inv(homography)), M)
+
+    # Step Two: Parameterized Sampling Grid Generator (PSGG)
+    # Creating a matrix of similar dimensions as the image. We have 2 channels to store x,y coords.
+    G = np.zeros((image.shape[1], image.shape[0], 2))
+    for row_idx in range(image.shape[0]):
+        for col_idx in range(image.shape[1]):
+            coord_np = np.array([row_idx+corners[0,0], col_idx+corners[0,1], 1]).transpose()
+            resultant = np.matmul(homography_inv, coord_np)
+            G[row_idx, col_idx, 0] = resultant[0]  # X
+            G[row_idx, col_idx, 1] = resultant[1]  # Y
+    V = np.zeros_like(image)
+    for i in range(V.shape[0]):
+        for j in range(V.shape[1]):
+            transformed_coordinates = G[i,j]
+            V[i,j] = image[transformed_coordinates]
+    return 
 
 def compute_homography(points_1, points_2):
     p1, p2, p3, p4 = points_1

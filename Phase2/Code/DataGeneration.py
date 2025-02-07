@@ -94,13 +94,18 @@ def display_bounding_boxes(name:str, image:np.ndarray, bounding_boxes: list[Boun
 #     np.savetxt(f'{outpath}Patch_Stacks/patch_stack_{idx}.csv', image_patch)
 #     np.savetxt(f'{outpath}Homographies/homography_{idx}.csv', H_4pt, delimiter=',')
     
-def export_data(patches, homographies, outpath, idx):
+def export_data(patches, homographies, corners: list[np.ndarray], outpath, idx):
     with open(f'{outpath}Patch_Stacks/patch_stack_{idx}.csv', 'w', newline='') as file:
         writer = csv.writer(file)
+        stack_idx = 0
         for stack in patches:
+            patch_corners = corners[stack_idx]
+            patch_corners = patch_corners.flatten()
+            writer.writerow(patch_corners)
             for matrix in stack:
                 writer.writerows(matrix)
             writer.writerow([])
+            stack_idx += 1
                 
     with open(f'{outpath}Homographies/homography_{idx}.csv', 'w', newline='') as file:
         writer = csv.writer(file)
@@ -135,14 +140,14 @@ def main():
     Parser.add_argument(
         "--PatchCount",
         type=int,
-        default=5,
+        default=64,
         help="Increase debug verbosity with higher debug level"
     )
     
     Parser.add_argument(
         "--NumImages",
         type=int,
-        default=-1,
+        default=10,
         help="Increase debug verbosity with higher debug level"
     )
 
@@ -177,12 +182,14 @@ def main():
     # batch_count = 0
     homography_write_list = []
     patch_stack_write_list = []
+    corners_write_list = []
 
     for image, name in zip(image_set, image_names):
         print(f"Generating Patches from Image: {name.replace('.jpg','')} out of {NumImages}")
         i = 0
         while i < PATCH_COUNT:
             unwarped_bb = generate_patch(image)
+            corners_write_list.append(unwarped_bb.get_points_np())
             unwarped_patch = image[unwarped_bb.tl.y:unwarped_bb.bl.y, unwarped_bb.tl.x:unwarped_bb.br.x]
             # print(f"unwarped bb {unwarped_bb}\n")
             # cv2.imshow('original image', image)
@@ -210,10 +217,10 @@ def main():
                     ], dtype=np.float32)
 
             # Convert corners to homogeneous coordinates
-            corners = np.column_stack((corners, np.ones(corners.shape[0])))
+            homogeneous_corners = np.column_stack((corners, np.ones(corners.shape[0])))
 
             # Apply the homography matrix
-            transformed_corners = np.dot(homography_inv, corners.T) 
+            transformed_corners = np.dot(homography_inv, homogeneous_corners.T) 
 
             # Normalize the points to convert back from homogeneous coordinates
             transformed_corners /= transformed_corners[2]
@@ -263,10 +270,12 @@ def main():
             H_4pt = warped_bb.get_points_np() - unwarped_bb.get_points_np()
             patch_stack_write_list.append(patch_stack)
             homography_write_list.append(H_4pt)
+
             if len(patch_stack_write_list) >= BatchSize:
-                export_data(patch_stack_write_list, homography_write_list, OutputPath, idx)
+                export_data(patch_stack_write_list, homography_write_list, corners_write_list, OutputPath, idx)
                 patch_stack_write_list = []
                 homography_write_list = []
+                corners_write_list = []
                 idx += 1    
             i += 1
     return

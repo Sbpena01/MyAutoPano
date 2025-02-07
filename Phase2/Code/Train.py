@@ -24,7 +24,7 @@ from torchvision.transforms import v2
 from torch.utils.tensorboard import SummaryWriter
 # from torchvision import datasets, transforms
 from torch.optim import AdamW, SGD
-from Network.Network import HomographyModel, LossFn_sup, LossFN_unsup
+from Network.Network import HomographyModel, LossFn_sup, LossFn_unsup
 import cv2
 import sys
 import os
@@ -71,12 +71,12 @@ def GenerateBatch(BasePath, DirNamesTrain, DirSize):
     # RandIdx = random.randint(1, DirSize-1)
     RandIdx = random.randint(1, 5)
     # TODO: fix read_data to match size
-    image, label = read_data(BasePath+DirNamesTrain, RandIdx)
+    image, label, corners = read_data(BasePath+DirNamesTrain, RandIdx)
 
     # # Append All Images and Mask
     # I1Batch.append(torch.from_numpy(image))
     # labels.append(torch.tensor(label))
-    return torch.from_numpy(image), torch.from_numpy(label)
+    return torch.from_numpy(image), torch.from_numpy(label), corners, RandIdx
     # return torch.stack(I1Batch), torch.stack(labels)
 
 
@@ -158,7 +158,9 @@ def TrainOperation(
         NumIterationsPerEpoch = int(NumTrainSamples / MiniBatchSize / DivTrain)
         epoch_loss = 0
         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
-            I1Batch, labels = GenerateBatch(BasePath, DirNamesTrain, NumTrainSamples)
+            # I1Batch is the stack of patches
+            # Labels is the calculated homography between patch A and patch B
+            I1Batch, labels, corners, image_idx = GenerateBatch(BasePath, DirNamesTrain, NumTrainSamples)
 
             # I1Batch = I1Batch.to(cuda)
             # labels = labels.to(cuda)
@@ -168,7 +170,8 @@ def TrainOperation(
             if ModelType == 'Sup':
                 LossThisBatch = LossFn_sup(PredicatedCoordinatesBatch, labels)
             elif ModelType == 'Unsup':
-                LossThisBatch = LossFN_unsup()  #TODO, complete this function
+                #TODO, find a way to deliver corners. Maybe during gen_data?
+                LossThisBatch = LossFn_unsup(PredicatedCoordinatesBatch, image_idx, I1Batch, corners=corners)
             else:
                 raise ValueError(f"Unknown ModelType. Currently is {ModelType}")
 
@@ -256,7 +259,7 @@ def main():
 
     Parser.add_argument(
         "--ModelType",
-        default="Sup",
+        default="Unsup",
         help="Model type, Supervised or Unsupervised? Choose from Sup and Unsup, Default:Sup",
     )
     Parser.add_argument(

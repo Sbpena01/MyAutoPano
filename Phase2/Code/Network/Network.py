@@ -26,13 +26,23 @@ def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
     ground_truth_H_4pt = torch.reshape(ground_truth_H_4pt, predicted_H_4pt.shape)
     return torch.nn.functional.mse_loss(predicted_H_4pt, ground_truth_H_4pt)
 
-def LossFn_unsup(delta, img_a, patch_b, corners):
-    ###############################################
-    # Fill your loss function of choice here!
-    ###############################################
-    homography = Utilities.tensor_dlt(delta, corners)
+def LossFn_unsup(deltas, img_a_idx, patch_stacks, corners=None):
+    # The way this works is we get the 3x3 homography from the H_4pt output from the agent.
+    # Then, we warp the corners given to us using the 3x3 homography. We compare patch_b
+    # to the patch defined by the warped corners used in img_a. The sum of differences 
+    # between the two patches is the loss function (L1).
+    for delta, patch_stack, patch_corners in zip(deltas, patch_stacks, corners):
+        patch_a = patch_stack[0]
+        patch_b = patch_stack[1]
+        patch_corners = np.float32(np.reshape(patch_corners, (4,2)))
+        delta = np.reshape(delta.detach().numpy(), (4,2))  # Does not remove from original matrix, creates a copy.
+        
+        homography = Utilities.tensor_dlt(delta, patch_corners)
 
-    # send homography throguh STN?
+        original_image = Utilities.get_image_from_idx(img_a_idx)
+        Utilities.spacial_transform_layer(homography, patch_b, patch_corners)
+        
+
 
 
 
@@ -40,7 +50,7 @@ def LossFn_unsup(delta, img_a, patch_b, corners):
     # H_offset = np.dot(H_offset, homography)
     # warped_img_a = cv2.warpPerspective(img_a, H_offset)
 
-    warpped_
+    # warpped_
 
     ###############################################
     # You can use kornia to get the transform and warp in this project
