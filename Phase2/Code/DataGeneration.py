@@ -147,7 +147,7 @@ def main():
     Parser.add_argument(
         "--NumImages",
         type=int,
-        default=10,
+        default=-1,
         help="Increase debug verbosity with higher debug level"
     )
 
