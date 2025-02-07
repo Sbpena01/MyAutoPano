@@ -37,8 +37,8 @@ class HomographyModel(pl.LightningModule):
         self.ModelType = ModelType
         self.model = Net(ModelType)
 
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, x, corners=None, image_idx=None):
+        return self.model(x, corners, image_idx)
 
     def validation_step(self, batch):
         homographies, labels = batch
@@ -164,7 +164,7 @@ class Net(nn.Module):
         x = self.relu9(self.fc1(x))
         x = self.dropout2(x)
         x = self.fc2(x)
-        if self.ModelType == 'sup':
+        if self.ModelType == 'Sup':
             return x
         
         # (64,1,8) # TODO: check

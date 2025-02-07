@@ -127,7 +127,7 @@ def TrainOperation(
     Saves Trained network in CheckPointPath and Logs to LogsPath
     """
     # Predict output with forward pass
-    model = HomographyModel()
+    model = HomographyModel(ModelType)
 
     ###############################################
     # Fill your optimizer of choice here!
