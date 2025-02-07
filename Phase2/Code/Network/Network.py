@@ -30,7 +30,6 @@ def LossFn_unsup(x, ground_truth_patches):
     patches_b = ground_truth_patches[1, :, :]
     return F.l1_loss(patches_b,x)
 
-
 class HomographyModel(pl.LightningModule):
     def __init__(self, ModelType):
         super(HomographyModel, self).__init__()
