@@ -16,8 +16,11 @@ def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
                 continue
             if not row:
                 current_np = np.array(current, dtype=np.float32)
-                current_np = np.reshape(current_np, (128, 128, 2))
-                patches.append(current_np)
+                patch_a = current_np[0:128, :]
+                patch_b = current_np[128:, :]
+                # current_np = np.reshape(current_np, (128, 128, 2))
+                actual_stack = np.array([patch_a, patch_b])
+                patches.append(actual_stack)
                 current = []
                 continue
             current.append(row)
@@ -35,7 +38,7 @@ def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
             current.append(row)
     patches = np.array(patches)
     homography = np.array(homography)
-    patches = np.transpose(patches, axes=(0, 3, 1, 2))
+    # patches = np.transpose(patches, axes=(0, 3, 2, 1))
     corners_np = np.array(corners, dtype=np.float32)
     return patches, homography, torch.from_numpy(corners_np)
 

@@ -73,6 +73,12 @@ def GenerateBatch(BasePath, DirNamesTrain, DirSize):
     # TODO: VERIFY IMAGE INTEGRITY after reading from csv. 
 
     image, label, corners = read_data(BasePath+DirNamesTrain, RandIdx)
+    patch_a = image[0, 0, :, :]
+    patch_b = image[0, 1, :, :]
+    # cv2.imshow('patch A', np.uint8(patch_a))
+    # cv2.imshow('patch B', np.uint8(patch_b))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
     #TODO: maybe randomizing the image_patches along the 1st axis (and the labels too) could provide better results...
     return torch.from_numpy(image), torch.from_numpy(label), corners, RandIdx
@@ -260,7 +266,7 @@ def main():
 
     Parser.add_argument(
         "--ModelType",
-        default="Unsup",
+        default="Sup",
         help="Model type, Supervised or Unsupervised? Choose from Sup and Unsup, Default:Sup",
     )
     Parser.add_argument(
