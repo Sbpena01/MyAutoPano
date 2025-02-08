@@ -21,7 +21,9 @@ import cv2
 # Don't generate pyc codes
 sys.dont_write_bytecode = True
 
-# check if size (64,8) works as expected for this loss func
+# TODO: check if size (64,8) works as expected for this loss func
+# TODO: what if multiplying output by 10 gives us something that is meaningful?
+# TODO: manually calculate MSE for each h4pt instead of getting element-wise mean...
 def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
     ground_truth_H_4pt = torch.reshape(ground_truth_H_4pt, predicted_H_4pt.shape)
     return torch.nn.functional.mse_loss(predicted_H_4pt, ground_truth_H_4pt)
@@ -102,7 +104,7 @@ class Net(nn.Module):
         self.bn8 = nn.BatchNorm2d(128)
         self.relu8 = nn.ReLU()
         
-        self.flatten = nn.Flatten()
+        self.flatten = nn.Flatten() # TODO: is this correct. Should we make it 64, 1, 32768 instead of 64, 32768
         self.dropout1 = nn.Dropout()
         self.dropout2 = nn.Dropout()
         self.fc1 = nn.Linear(32768, 1024)

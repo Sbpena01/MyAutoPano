@@ -70,12 +70,11 @@ def GenerateBatch(BasePath, DirNamesTrain, DirSize):
     # Generate random image
     # RandIdx = random.randint(1, DirSize-1)
     RandIdx = random.randint(1, 5)
-    # TODO: fix read_data to match size
+    # TODO: VERIFY IMAGE INTEGRITY after reading from csv. 
+
     image, label, corners = read_data(BasePath+DirNamesTrain, RandIdx)
 
-    # # Append All Images and Mask
-    # I1Batch.append(torch.from_numpy(image))
-    # labels.append(torch.tensor(label))
+    #TODO: maybe randomizing the image_patches along the 1st axis (and the labels too) could provide better results...
     return torch.from_numpy(image), torch.from_numpy(label), corners, RandIdx
     # return torch.stack(I1Batch), torch.stack(labels)
 
