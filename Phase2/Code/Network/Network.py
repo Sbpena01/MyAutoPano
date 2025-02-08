@@ -21,13 +21,23 @@ import cv2
 # Don't generate pyc codes
 sys.dont_write_bytecode = True
 
-
+# check if size (64,8) works as expected for this loss func
 def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
     ground_truth_H_4pt = torch.reshape(ground_truth_H_4pt, predicted_H_4pt.shape)
     return torch.nn.functional.mse_loss(predicted_H_4pt, ground_truth_H_4pt)
 
 def LossFn_unsup(x, ground_truth_patches):
     patches_b = ground_truth_patches[:, 0:1, :, :]
+
+    patch = patches_b[0,:,:,:].numpy()
+    estim = x[0,:,:,:].detach().numpy()
+    patch = np.squeeze(np.transpose(patch, axes=(1,2,0)))
+    estim = np.squeeze(np.transpose(estim, axes=(1,2,0)))
+    
+    cv2.imshow('original_warped', np.uint8(patch))
+    cv2.imshow('estim_warped', np.uint8(estim))
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
     return F.l1_loss(patches_b,x)
 
 class HomographyModel(pl.LightningModule):
@@ -99,7 +109,7 @@ class Net(nn.Module):
         self.relu9 = nn.ReLU()
         self.fc2 = nn.Linear(1024, 8)
 
-        if(self.ModelType == 'unsup'):
+        if(self.ModelType == 'Unsup'):
             self.fc_loc = nn.Sequential(
                 nn.Linear(10 * 3 * 3, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
             )
@@ -125,7 +135,8 @@ class Net(nn.Module):
     #############################
     def stn(self, x, image):
         "Spatial transformer network forward function"
-        xs = self.localization(x)
+        x = torch.from_numpy(np.array([x]))
+        xs = self.localization(x.float())
         xs = xs.view(-1, 64 * 3 * 3)
         theta = self.fc_loc(xs)
         theta = theta.view(-1, 2, 3)
@@ -167,12 +178,13 @@ class Net(nn.Module):
         if self.ModelType == 'Sup':
             return x
         
-        # (64,1,8) # TODO: check
+        print(x[1, :])
 
         # tensor DLT
         x = Utilities.tensor_dlt(x, corners)
         # stn
         image = Utilities.get_image_from_idx(idx, True)
-        x = Utilities.spacial_transform_layer(x, image, corners)
+        # x = Utilities.spacial_transform_layer(x, image, corners)
+        x = self.stn(x, image)
         # (64, 128, 128)
         return x

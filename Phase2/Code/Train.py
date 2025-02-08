@@ -132,7 +132,7 @@ def TrainOperation(
     ###############################################
     # Fill your optimizer of choice here!
     ###############################################
-    Optimizer = SGD(model.parameters(), lr=0.0005, momentum=0.9)
+    Optimizer = SGD(model.parameters(), lr=0.0001, momentum=0.9)
 
     # Tensorboard
     # Create a summary to monitor loss tensor
