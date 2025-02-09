@@ -58,8 +58,8 @@ class HomographyModel(pl.LightningModule):
         self.ModelType = ModelType
         self.model = Net(ModelType)
 
-    def forward(self, x, corners=None, image_idx=None):
-        return self.model(x, corners, image_idx)
+    def forward(self, x, corners=None, image_idx=None, is_train=True):
+        return self.model(x, corners, image_idx, is_train)
 
     def validation_step(self, batch):
         homographies, labels, corners, image_idx = batch
@@ -201,5 +201,5 @@ class Net(nn.Module):
         x = Utilities.spacial_transform_layer(x, image, corners)
         # x = self.stn(x, image)
         # (64, 128, 128)
-        x = x.to(device=torch.device("cuda"))
+        # x = x.to(device=torch.device("cuda"))
         return x, h_4pt
