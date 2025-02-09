@@ -4,6 +4,9 @@ import csv
 import cv2
 import torch
 
+WARPED_WEIGHT = 0.5
+PANORAMA_WEIGHT = 0.5
+
 def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
     patches = []
     corners = []
@@ -231,6 +234,71 @@ def construct_A_partial(point_source, point_target):
         [z_t*x, z_t*y, z_t*z, 0, 0, 0, -x_t*x, -x_t*y, -x_t*z]
     ])
     return A_partial
+
+def warp_and_stitch(homography, image, panorama):
+
+    corners = np.array([
+                [0, 0],
+                [image.shape[1], 0],
+                [image.shape[1], image.shape[0]],
+                [0, image.shape[0]]
+            ], dtype=np.float32)
+
+    # Convert corners to homogeneous coordinates
+    corners = np.column_stack((corners, np.ones(corners.shape[0])))
+
+    # Apply the homography matrix
+    transformed_corners = np.dot(homography, corners.T) 
+
+    # Normalize the points to convert back from homogeneous coordinates
+    transformed_corners /= transformed_corners[2]
+
+    # Extract x and y coordinates
+    x_coords = transformed_corners[0]
+    y_coords = transformed_corners[1]
+
+    x_min, x_max = int(np.min(x_coords)), int(np.max(x_coords))
+    y_min, y_max = int(np.min(y_coords)), int(np.max(y_coords))
+
+    width = max(x_max, panorama.shape[1]) - min(0, x_min)
+    height = max(y_max,panorama.shape[0]) - min(0, y_min)
+    dsize = (width, height)
+
+    # Offset to shift the result back into view if needed
+    offset_x = -x_min if x_min < 0 else 0
+    offset_y = -y_min if y_min < 0 else 0
+
+    offset_matrix = np.array([
+        [1, 0, offset_x],
+        [0, 1, offset_y],
+        [0, 0, 1]
+    ], dtype=np.float64)
+
+    # Update the homography
+    H_offset = np.dot(offset_matrix, homography)
+    # X increases horizontal axis, Y increases vertical axis
+    warped_image = cv2.warpPerspective(image, M=H_offset, dsize=dsize)
+    print(warped_image.shape)
+    for y in range(warped_image.shape[0]):
+        for x in range(warped_image.shape[1]):
+            if y < panorama.shape[0] and x < panorama.shape[1]:
+                warped_pixel = warped_image[y+offset_y,x+offset_x] 
+                if not np.equal(warped_pixel, np.array([0,0,0])).all():
+                    # need to blend
+                    if np.equal(panorama[y,x], np.array([0,0,0])).all():
+                        panorama_pixel = np.zeros_like(warped_pixel)
+                    else:
+                        warped_pixel = warped_pixel.astype(np.float32) * WARPED_WEIGHT
+                        panorama_pixel = panorama[y,x].astype(np.float32) * PANORAMA_WEIGHT
+                    new_pixel = np.add(warped_pixel, panorama_pixel).astype('uint8')
+                else:
+                    new_pixel = panorama[y,x]
+                warped_image[y+offset_y,x+offset_x] = new_pixel
+    # cv2.imshow('pano', warped_image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    return warped_image
+
 class Point:
     def __init__(self, point: tuple):
         self.x = int(point[1])

@@ -11,3 +11,4 @@ SLURM_OUTPUT/
 Checkpoints/
 panovenv2/
 Checkpoints_Unsup/
+*.jpg
