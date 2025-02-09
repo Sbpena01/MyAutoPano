@@ -14,10 +14,13 @@
 IN_FOLDERS=("Phase2/Data/Data_Generation/Train/" "Phase2/Data/Data_Generation/Val/")
 IM_PATHS=("Phase2/Data/Train/" "Phase2/Data/Val/")
 
+mkdir -p ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]}"Patch_Stacks/" 
+mkdir -p ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]}"Homographies/"
+
 module load python/3.12.6/r3qjhak py-pip/24.0 
 
 source ../panovenv/bin/activate
 
 pip install -r requirements.txt
 
-python -u Phase2/Code/DataGeneration.py --OutputPath ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]} --ImagePath ${IM_PATHS[$SLURM_ARRAY_TASK_ID-1]} --NumImages 640 --PatchCount 64 --BatchSize 64
+python -u Phase2/Code/DataGeneration.py --OutputPath ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]} --ImagePath ${IM_PATHS[$SLURM_ARRAY_TASK_ID-1]} --PatchCount 64 --BatchSize 64
