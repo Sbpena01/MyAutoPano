@@ -31,13 +31,21 @@ def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
 def LossFn_unsup(x, ground_truth_patches):
     patches_b = ground_truth_patches[:, 0:1, :, :]
 
-    patch = patches_b[0,:,:,:].numpy()
-    estim = x[0,:,:,:].detach().numpy()
-    patch = np.squeeze(np.transpose(patch, axes=(1,2,0)))
-    estim = np.squeeze(np.transpose(estim, axes=(1,2,0)))
+    # num_patches_shown = 5
+    # for i in range(num_patches_shown):
+    #     patch = patches_b[i,:,:,:].numpy()
+    #     estim = x[i,:,:,:].detach().numpy()
+    #     patch = np.squeeze(np.transpose(patch, axes=(1,2,0)))
+    #     estim = np.squeeze(np.transpose(estim, axes=(1,2,0)))
+    #     patch_row = patch if i == 0 else np.hstack((patch_row, patch))
+    #     estim_row = estim if i == 0 else np.hstack((estim_row, estim))
+    #     black_bar = np.zeros((128,2))
+    #     patch_row = np.hstack((patch_row, black_bar))
+    #     estim_row = np.hstack((estim_row, black_bar))
     
-    # cv2.imshow('original_warped', np.uint8(patch))
-    # cv2.imshow('estim_warped', np.uint8(estim))
+    # hori_black_bar = np.zeros((2, patch_row.shape[1]))
+    # full = np.vstack((patch_row,hori_black_bar, estim_row))
+    # cv2.imshow('TOP: original. BOTTOM: estimation', np.uint8(full))
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
     return F.l1_loss(patches_b,x)
@@ -54,7 +62,7 @@ class HomographyModel(pl.LightningModule):
 
     def validation_step(self, batch):
         homographies, labels, corners, image_idx = batch
-        delta = self.model(homographies, corners, image_idx)
+        delta = self.model(homographies, corners, image_idx, is_train=False)
         loss = LossFn_sup(delta, labels) if self.ModelType=='Sup' else LossFn_unsup(delta, homographies)
         return {"val_loss": loss}
 
@@ -148,7 +156,7 @@ class Net(nn.Module):
 
         return x
 
-    def forward(self, x, corners, idx):
+    def forward(self, x, corners, idx, is_train=True):
         """
         Input:
         xa is a MiniBatch of the image a
@@ -185,7 +193,7 @@ class Net(nn.Module):
         # tensor DLT
         x = Utilities.tensor_dlt(x, corners)
         # stn
-        image = Utilities.get_image_from_idx(idx, True)
+        image = Utilities.get_image_from_idx(idx, is_train)
         x = Utilities.spacial_transform_layer(x, image, corners)
         # x = self.stn(x, image)
         # (64, 128, 128)

@@ -137,14 +137,14 @@ def TrainOperation(
     ###############################################
     # Fill your optimizer of choice here!
     ###############################################
-    Optimizer = SGD(model.parameters(), lr=0.005, momentum=0.9)
+    Optimizer = SGD(model.parameters(), lr=0.0005, momentum=0.9)
 
     # Tensorboard
     # Create a summary to monitor loss tensor
     # Writer = SummaryWriter(LogsPath)
 
 
-    cuda = torch.device("cuda")
+    # cuda = torch.device("cuda")
 
     # if LatestFile is not None:
     #     CheckPoint = torch.load(CheckPointPath + LatestFile + ".ckpt")
@@ -157,7 +157,7 @@ def TrainOperation(
     #     print("New model initialized....")
 
     StartEpoch = 0
-    model.to(cuda)
+    # model.to(cuda)
 
     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
         NumIterationsPerEpoch = int(NumTrainSamples / DivTrain)
@@ -167,9 +167,9 @@ def TrainOperation(
             # Labels is the calculated homography between patch A and patch B
             I1Batch, labels, corners, image_idx = GenerateBatch(BasePath, DirNamesTrain, NumTrainSamples)
 
-            I1Batch = I1Batch.to(cuda)
-            labels = labels.to(cuda)
-            corners = corners.to(cuda)
+            # I1Batch = I1Batch.to(cuda)
+            # labels = labels.to(cuda)
+            # corners = corners.to(cuda)
 
             # Predict output with forward pass
             
@@ -223,10 +223,10 @@ def TrainOperation(
         
         
         with torch.no_grad():
-            val_ims, val_labels, corners, val_idx = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
-            val_ims = val_ims.to(cuda)
-            val_labels = val_labels.to(cuda)
-            val_corners = corners.to(cuda)
+            val_ims, val_labels, val_corners, val_idx = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
+            # val_ims = val_ims.to(cuda)
+            # val_labels = val_labels.to(cuda)
+            # val_corners = corners.to(cuda)
             # val_idx = image_idx.to(cuda)
             result = model.validation_step((val_ims, val_labels, val_corners, val_idx))
         
