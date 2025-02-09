@@ -36,10 +36,10 @@ def LossFn_unsup(x, ground_truth_patches):
     patch = np.squeeze(np.transpose(patch, axes=(1,2,0)))
     estim = np.squeeze(np.transpose(estim, axes=(1,2,0)))
     
-    cv2.imshow('original_warped', np.uint8(patch))
-    cv2.imshow('estim_warped', np.uint8(estim))
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # cv2.imshow('original_warped', np.uint8(patch))
+    # cv2.imshow('estim_warped', np.uint8(estim))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
     return F.l1_loss(patches_b,x)
 
 class HomographyModel(pl.LightningModule):
@@ -53,7 +53,7 @@ class HomographyModel(pl.LightningModule):
         return self.model(x, corners, image_idx)
 
     def validation_step(self, batch):
-        homographies, labels, corners, image_idx  = batch
+        homographies, labels, corners, image_idx = batch
         delta = self.model(homographies, corners, image_idx)
         loss = LossFn_sup(delta, labels) if self.ModelType=='Sup' else LossFn_unsup(delta, homographies)
         return {"val_loss": loss}
@@ -180,13 +180,13 @@ class Net(nn.Module):
         if self.ModelType == 'Sup':
             return x
         
-        print(x[1, :])
+        # print(x[1, :])
 
         # tensor DLT
         x = Utilities.tensor_dlt(x, corners)
         # stn
         image = Utilities.get_image_from_idx(idx, True)
-        # x = Utilities.spacial_transform_layer(x, image, corners)
-        x = self.stn(x, image)
+        x = Utilities.spacial_transform_layer(x, image, corners)
+        # x = self.stn(x, image)
         # (64, 128, 128)
         return x

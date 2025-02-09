@@ -268,7 +268,7 @@ def main():
 
     Parser.add_argument(
         "--ModelType",
-        default="Sup",
+        default="Unsup",
         help="Model type, Supervised or Unsupervised? Choose from Sup and Unsup, Default:Sup",
     )
     Parser.add_argument(

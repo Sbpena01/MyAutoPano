@@ -18,7 +18,6 @@ def read_data(path, idx) -> tuple[np.ndarray, np.ndarray]:
                 current_np = np.array(current, dtype=np.float32)
                 patch_a = current_np[0:128, :]
                 patch_b = current_np[128:, :]
-                # current_np = np.reshape(current_np, (128, 128, 2))
                 actual_stack = np.array([patch_a, patch_b])
                 patches.append(actual_stack)
                 current = []
@@ -121,12 +120,29 @@ def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners
 
         input = torch.from_numpy(np.array([[image]], dtype=np.float64))
         
-
+        # cv2.imshow('orig', np.uint8(np.squeeze(image)))
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
         grid = torch.nn.functional.affine_grid(torch.from_numpy(affine_grid), torch.Size((1,1,image.shape[0], image.shape[1])))
         full_warped_image = torch.nn.functional.grid_sample(input, grid, padding_mode='reflection')
+        # cv2.imshow('warp', np.uint8(np.squeeze(full_warped_image)))
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
         corners = torch.reshape(corners, (4,2))
+        # print(corners[0,0].item())
+        # print(corners[1,0].item())
+        
+        # print(corners[0,1].item())
+        # print(corners[3,1].item())
         patch_B = full_warped_image[:, :, int(corners[0,1].item()):int(corners[3,1].item()), int(corners[0,0].item()):int(corners[1,0].item())]
+        # patch_B = full_warped_image[:, :, int(corners[0,0].item()):int(corners[1,0].item()), int(corners[0,1].item()):int(corners[3,1].item())]
+        patch_B = patch_B.int()
+        
+        # cv2.imshow('patch', np.uint8(np.squeeze(patch_B)))
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        
         # Step Two: Parameterized Sampling Grid Generator (PSGG)
         # Creating a matrix of similar dimensions as the image. We have 2 channels to store x,y coords.
         # G = np.zeros((image.shape[0], image.shape[1], 2))
@@ -148,8 +164,8 @@ def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners
         #         transformed_coordinates = V[y,x]
         #         warped_patch[y,x] = image[transformed_coordinates]
         estim_patch_stack = torch.vstack((estim_patch_stack, patch_B))
-
-    return estim_patch_stack[0:64, :, :, :]
+    output = estim_patch_stack[0:64, :, :, :]
+    return output.flip(dims=(0,))
 
 def compute_homography(points_1, points_2):
     points_1 = torch.reshape(points_1, (4,2))
