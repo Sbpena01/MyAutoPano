@@ -137,27 +137,15 @@ def TrainOperation(
     ###############################################
     # Fill your optimizer of choice here!
     ###############################################
-    Optimizer = SGD(model.parameters(), lr=0.0005, momentum=0.9)
+    if ModelType == "Unsup":
+        Optimizer = SGD(model.parameters(), lr=0.0001, momentum=0.9)
+    else:
+        Optimizer = SGD(model.parameters(), lr=0.005, momentum=0.9)
 
-    # Tensorboard
-    # Create a summary to monitor loss tensor
-    # Writer = SummaryWriter(LogsPath)
-
-
-    # cuda = torch.device("cuda")
-
-    # if LatestFile is not None:
-    #     CheckPoint = torch.load(CheckPointPath + LatestFile + ".ckpt")
-    #     # Extract only numbers from the name
-    #     StartEpoch = int("".join(c for c in LatestFile.split("a")[0] if c.isdigit()))
-    #     model.load_state_dict(CheckPoint["model_state_dict"])
-    #     print("Loaded latest checkpoint with the name " + LatestFile + "....")
-    # else:
-    #     StartEpoch = 0
-    #     print("New model initialized....")
+    cuda = torch.device("cuda")
 
     StartEpoch = 0
-    # model.to(cuda)
+    model.to(cuda)
 
     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
         NumIterationsPerEpoch = int(NumTrainSamples / DivTrain)
@@ -167,9 +155,9 @@ def TrainOperation(
             # Labels is the calculated homography between patch A and patch B
             I1Batch, labels, corners, image_idx = GenerateBatch(BasePath, DirNamesTrain, NumTrainSamples)
 
-            # I1Batch = I1Batch.to(cuda)
-            # labels = labels.to(cuda)
-            # corners = corners.to(cuda)
+            I1Batch = I1Batch.to(cuda)
+            labels = labels.to(cuda)
+            corners = corners.to(cuda)
 
             # Predict output with forward pass
             
@@ -177,7 +165,7 @@ def TrainOperation(
                 PredicatedCoordinatesBatch = model(I1Batch)
                 LossThisBatch = LossFn_sup(PredicatedCoordinatesBatch, labels)
             elif ModelType == 'Unsup':
-                PredicatedCoordinatesBatch = model(I1Batch, corners, image_idx)
+                PredicatedCoordinatesBatch, __ = model(I1Batch, corners, image_idx)
                 LossThisBatch = LossFn_unsup(PredicatedCoordinatesBatch, I1Batch)
             else:
                 raise ValueError(f"Unknown ModelType. Currently is {ModelType}")
@@ -209,25 +197,13 @@ def TrainOperation(
                     SaveName,
                 )
                 print("\n" + SaveName + " Model Saved...")
-
-            # result = model.validation_step(GenerateBatch(BasePath, DirNamesVal, MiniBatchSize))
-            
-            # Tensorboard
-            # Writer.add_scalar(
-            #     "LossEveryIter",
-            #     result["val_loss"],
-            #     Epochs * NumIterationsPerEpoch + PerEpochCounter,
-            # )
-            # If you don't flush the tensorboard doesn't update until a lot of iterations!
-            # Writer.flush()
-        
         
         with torch.no_grad():
             val_ims, val_labels, val_corners, val_idx = GenerateBatch(BasePath, DirNamesVal, NumValSamples)
-            # val_ims = val_ims.to(cuda)
-            # val_labels = val_labels.to(cuda)
-            # val_corners = corners.to(cuda)
-            # val_idx = image_idx.to(cuda)
+            val_ims = val_ims.to(cuda)
+            val_labels = val_labels.to(cuda)
+            val_corners = val_corners.to(cuda)
+            # print(f"VAL_IDX: {val_idx}")
             result = model.validation_step((val_ims, val_labels, val_corners, val_idx))
         
         print(f"Validation Loss: {result['val_loss']}, Training Loss: {epoch_loss}")

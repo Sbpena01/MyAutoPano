@@ -18,6 +18,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import Utilities
 import cv2
+import copy
 # Don't generate pyc codes
 sys.dont_write_bytecode = True
 
@@ -62,7 +63,7 @@ class HomographyModel(pl.LightningModule):
 
     def validation_step(self, batch):
         homographies, labels, corners, image_idx = batch
-        delta = self.model(homographies, corners, image_idx, is_train=False)
+        delta, __ = self.model(homographies, corners, image_idx, is_train=False)
         loss = LossFn_sup(delta, labels) if self.ModelType=='Sup' else LossFn_unsup(delta, homographies)
         return {"val_loss": loss}
 
@@ -187,6 +188,9 @@ class Net(nn.Module):
         x = self.fc2(x)
         if self.ModelType == 'Sup':
             return x
+        else: 
+            h_4pt = copy.deepcopy(x)
+
         
         # print(x[1, :])
 
@@ -197,4 +201,5 @@ class Net(nn.Module):
         x = Utilities.spacial_transform_layer(x, image, corners)
         # x = self.stn(x, image)
         # (64, 128, 128)
-        return x
+        x = x.to(device=torch.device("cuda"))
+        return x, h_4pt

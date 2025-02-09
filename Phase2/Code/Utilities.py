@@ -95,7 +95,9 @@ def tensor_dlt(homography_4pt: torch.tensor, corners_a: list[np.ndarray]):
         c_b = c_a + H
         H_3x3 = compute_homography(c_a, c_b)
         output.append(H_3x3)
-    return torch.tensor(output)  # 64x3x3
+    output = torch.tensor(output)
+    # output = output.to(device=torch.device("cuda"))
+    return output  # 64x3x3
 
 def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners_list: torch.tensor):
     # Step One: calculated inverse homography
@@ -108,6 +110,8 @@ def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners
     ])
     # H^(-1) = M^(-1)*H^(-1)*M
     estim_patch_stack = torch.empty((1,1,128,128), requires_grad=True)
+
+    # print(f"Image Shape: {image.shape}")
     
     for homography, corners in zip(homographies, corners_list):
         homography_inv = np.matmul(np.matmul(np.linalg.inv(M), np.linalg.inv(homography)), M)
@@ -128,15 +132,9 @@ def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners
         # cv2.imshow('warp', np.uint8(np.squeeze(full_warped_image)))
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
-
         corners = torch.reshape(corners, (4,2))
-        # print(corners[0,0].item())
-        # print(corners[1,0].item())
-        
-        # print(corners[0,1].item())
-        # print(corners[3,1].item())
+        # print(f"Top_left x: {corners[0,0].item()}, Top_right x: {corners[1,0].item()}, Top_left y: {corners[0,1].item()}, Bot_right y: {corners[3,1].item()}")
         patch_B = full_warped_image[:, :, int(corners[0,1].item()):int(corners[3,1].item()), int(corners[0,0].item()):int(corners[1,0].item())]
-        # patch_B = full_warped_image[:, :, int(corners[0,0].item()):int(corners[1,0].item()), int(corners[0,1].item()):int(corners[3,1].item())]
         patch_B = patch_B.int()
         
         # cv2.imshow('patch', np.uint8(np.squeeze(patch_B)))
@@ -164,12 +162,15 @@ def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners
         #         transformed_coordinates = V[y,x]
         #         warped_patch[y,x] = image[transformed_coordinates]
         estim_patch_stack = torch.vstack((estim_patch_stack, patch_B))
-    output = estim_patch_stack[0:64, :, :, :]
-    return output.flip(dims=(0,))
+    output = estim_patch_stack[1:65, :, :, :]
+    return output
+    # return output.flip(dims=(0,))
 
 def compute_homography(points_1, points_2):
     points_1 = torch.reshape(points_1, (4,2))
     points_2 = torch.reshape(points_2, (4,2))
+    points_1 = points_1.to(device=torch.device("cpu"))
+    points_2 = points_2.to(device=torch.device("cpu"))
     p1 = points_1[0].detach()
     p2 = points_1[1].detach()
     p3 = points_1[2].detach()

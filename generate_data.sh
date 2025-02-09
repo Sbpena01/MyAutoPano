@@ -17,9 +17,9 @@ IM_PATHS=("Phase2/Data/Train/" "Phase2/Data/Val/")
 mkdir -p ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]}"Patch_Stacks/" 
 mkdir -p ${IN_FOLDERS[$SLURM_ARRAY_TASK_ID-1]}"Homographies/"
 
-module load python/3.12.6/r3qjhak py-pip/24.0 
+module load py-pip/24.0 
 
-source ../panovenv/bin/activate
+source panovenv2/bin/activate
 
 pip install -r requirements.txt
 
