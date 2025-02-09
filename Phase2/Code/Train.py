@@ -148,7 +148,8 @@ def TrainOperation(
     model.to(cuda)
 
     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
-        NumIterationsPerEpoch = int(NumTrainSamples / DivTrain)
+        # NumIterationsPerEpoch = int(NumTrainSamples / DivTrain)
+        NumIterationsPerEpoch = 5
         epoch_loss = 0
         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
             # I1Batch is the stack of patches
@@ -174,7 +175,7 @@ def TrainOperation(
             LossThisBatch.backward()
             Optimizer.step()
             epoch_loss += LossThisBatch.item()
-            print(epoch_loss)
+            # print(epoch_loss)
 
             # Save checkpoint every some SaveCheckPoint's iterations
             if PerEpochCounter % SaveCheckPoint == 0:

@@ -29,26 +29,26 @@ def LossFn_sup(predicted_H_4pt: torch.Tensor, ground_truth_H_4pt: torch.Tensor):
     ground_truth_H_4pt = torch.reshape(ground_truth_H_4pt, predicted_H_4pt.shape)
     return torch.nn.functional.mse_loss(predicted_H_4pt, ground_truth_H_4pt)
 
-def LossFn_unsup(x, ground_truth_patches):
-    patches_b = ground_truth_patches[:, 0:1, :, :]
-
-    # num_patches_shown = 5
-    # for i in range(num_patches_shown):
-    #     patch = patches_b[i,:,:,:].numpy()
-    #     estim = x[i,:,:,:].detach().numpy()
-    #     patch = np.squeeze(np.transpose(patch, axes=(1,2,0)))
-    #     estim = np.squeeze(np.transpose(estim, axes=(1,2,0)))
-    #     patch_row = patch if i == 0 else np.hstack((patch_row, patch))
-    #     estim_row = estim if i == 0 else np.hstack((estim_row, estim))
-    #     black_bar = np.zeros((128,2))
-    #     patch_row = np.hstack((patch_row, black_bar))
-    #     estim_row = np.hstack((estim_row, black_bar))
-    
-    # hori_black_bar = np.zeros((2, patch_row.shape[1]))
-    # full = np.vstack((patch_row,hori_black_bar, estim_row))
-    # cv2.imshow('TOP: original. BOTTOM: estimation', np.uint8(full))
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+def LossFn_unsup(x, ground_truth_patches, is_val=False):
+    patches_b = ground_truth_patches[:, 1:, :, :]
+    if is_val:
+        num_patches_shown = 5
+        for i in range(num_patches_shown):
+            patch = patches_b[i,:,:,:].numpy()
+            estim = x[i,:,:,:].detach().numpy()
+            patch = np.squeeze(np.transpose(patch, axes=(1,2,0)))
+            estim = np.squeeze(np.transpose(estim, axes=(1,2,0)))
+            patch_row = patch if i == 0 else np.hstack((patch_row, patch))
+            estim_row = estim if i == 0 else np.hstack((estim_row, estim))
+            black_bar = np.zeros((128,2))
+            patch_row = np.hstack((patch_row, black_bar))
+            estim_row = np.hstack((estim_row, black_bar))
+        
+        hori_black_bar = np.zeros((2, patch_row.shape[1]))
+        full = np.vstack((patch_row,hori_black_bar, estim_row))
+        cv2.imshow('TOP: original. BOTTOM: estimation', np.uint8(full))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
     return F.l1_loss(patches_b,x)
 
 class HomographyModel(pl.LightningModule):

@@ -165,8 +165,9 @@ def spacial_transform_layer(homographies:torch.tensor, image:np.ndarray, corners
         #         transformed_coordinates = V[y,x]
         #         warped_patch[y,x] = image[transformed_coordinates]
         estim_patch_stack = torch.vstack((estim_patch_stack, patch_B))
-    output = estim_patch_stack[0:64, :, :, :]
-    return output.flip(dims=(0,))
+    output = estim_patch_stack[1:65, :, :, :]
+    # return output.flip(dims=(0,))
+    return output
 
 def compute_homography(points_1, points_2):
     points_1 = torch.reshape(points_1, (4,2))
